@@ -4,3 +4,5 @@ x
 # is everything good?
 y <- x+1
 y
+
+k<-9
