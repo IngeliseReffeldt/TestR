@@ -6,3 +6,4 @@ y <- x+1
 y
 
 k<-9
+#du er altså smuk
