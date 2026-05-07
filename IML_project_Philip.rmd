@@ -1,0 +1,332 @@
+---
+title: "IML_assignment"
+author: "Philip Nordfang"
+date: "2026-04-27"
+output: html_document
+---
+
+```{r}
+library(mlr3)
+library(mlr3learners)
+library(mlr3tuning)
+library(mlr3mbo)
+library(mlr3pipelines)
+library(paradox)
+library(future)
+library(tidyverse)
+library(forcats)
+```
+
+
+### Noter:
+
+- GOAL: you should build models predicting ClaimAmount conditional on Exposure = 1
+
+
+```{r}
+MPL_data = freMPL
+```
+
+```{r}
+summary(MPL_data)
+```
+
+```{r}
+data_exp <- subset(MPL_data, Exposure == 1)
+```
+
+```{r}
+unique(data_exp$RecordEnd)
+```
+
+```{r}
+hist(data_exp$ClaimAmount, main ="Claim amount distribution",
+    xlab ="Claim Amount",
+    col ="blue")
+```
+
+```{r}
+data_exp <- subset(data_exp, select = -c(RecordEnd, RecordBeg, ClaimInd))
+```
+
+```{r}
+# Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data
+data_exp_lump <- data_exp
+
+factor_cols <- names(data_exp_lump)[sapply(data_exp_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  data_exp_lump[[col]] <- as.factor(data_exp_lump[[col]])
+  data_exp_lump[[col]] <- fct_lump_min(data_exp_lump[[col]], min = 10)
+  data_exp_lump[[col]] <- droplevels(data_exp_lump[[col]])
+}
+```
+
+```{r}
+unique(data_exp_lump$SocioCateg)
+```
+
+
+#################################
+####### Testing Exercise solutions from week 2 on the data
+
+# Define task
+
+```{r}
+task = as_task_regr(data_exp_lump, target = "ClaimAmount")
+```
+
+# Create train and test set
+
+```{r}
+set.seed(2026)
+splits = partition(task, ratio = 0.8)
+task_train = task$clone()$filter(splits$train)
+task_test = task$clone()$filter(splits$test)
+```
+
+#### define learner: linear regression
+
+```{r}
+my_lr_learner = lrn("regr.lm")
+```
+
+
+##### Creates a pipeline that converts categorical features to numeric with one hot encoding, standardizes numeric features, and applies linear regression.
+
+```{r}
+graph_learner_lr = as_learner(
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  my_lr_learner
+)
+```
+
+
+######## result on test set
+
+```{r}
+graph_learner_lr$train(task_train)
+graph_learner_lr$predict(task_test)$score(msr("regr.rmse"))
+```
+
+### baseline with no features
+
+```{r}
+baseline <- lrn("regr.featureless")$train(task_train)
+baseline$predict(task_test)$score(msr("regr.rmse"))
+```
+
+#################################
+### Cross Validation
+
+#### define learner
+
+### elastic net
+```{r}
+my_elasticnet_learner = lrn(
+  "regr.glmnet", 
+  standardize = FALSE,
+  alpha = to_tune(0, 1),
+  lambda = to_tune(p_dbl(log(1e-5), log(1e1), trafo = exp))
+  # Alternatively lambda = to_tune(1e-5, 1e1, logscale=TRUE)
+  )
+```
+
+#### create a graph that first one hot-encodes factors, and afterwards applies elastic net
+```{r}
+graph_learner_elastic_net = as_learner(
+  po("encode", method = "one-hot") %>>%
+    po("scale") %>>%
+    my_elasticnet_learner
+)
+```
+
+```{r}
+set.seed(2026)
+instance = tune(
+  tuner = tnr("random_search", batch_size=20), ### tuning method
+  #tuner = tnr("mbo"), ### tuning method
+  task = task_train,
+  learner = graph_learner_elastic_net,
+  resampling = rsmp("cv", folds = 5), #### resampling method: 5-fold cross validation
+  measures = msr("regr.rmse"), #### root mean squared error
+  terminator = trm("evals", n_evals = 50) #### terminator
+)
+```
+
+```{r}
+as.data.table(instance$archive$data)
+instance$result_learner_param_vals
+```
+
+```{r}
+instance$result_y
+```
+
+# keep an untuned copy of the same graph for the auto_tuner example below
+```{r}
+graph_learner_elastic_net_auto = graph_learner_elastic_net$clone(deep = TRUE)
+```
+
+######## result on test set
+
+```{r}
+graph_learner_elastic_net$param_set$values = instance$result_learner_param_vals
+graph_learner_elastic_net$train(task_train)
+graph_learner_elastic_net$predict(task_test)$score(msr("regr.rmse"))
+
+archive_dt = as.data.table(instance$archive)
+```
+
+
+### sparsity / accuracy tradeoff for a few alpha values
+```{r}
+alpha_values = c(0, 0.25, 0.5, 0.75, 1)
+lambda_grid = exp(seq(log(1e-5), log(1e1), length.out = 15))
+tradeoff = expand.grid(alpha = alpha_values, lambda = lambda_grid)
+tradeoff$n_features = NA_real_
+tradeoff$cv_error = NA_real_
+```
+
+
+```{r}
+for (i in seq_len(nrow(tradeoff))) {
+  learner_i = as_learner(
+    po("encode", method = "one-hot") %>>% po("scale") %>>%
+      lrn("regr.glmnet",
+          standardize = FALSE,
+          alpha = tradeoff$alpha[i],
+          lambda = tradeoff$lambda[i])
+  )
+
+  set.seed(2026)
+  rr_i = resample(task_train, learner_i$clone(deep = TRUE), rsmp("cv", folds = 5))
+  tradeoff$cv_error[i] = rr_i$aggregate(msr("regr.rmse"))
+
+  learner_i$train(task_train)
+  beta = learner_i$model$regr.glmnet$model$beta
+  tradeoff$n_features[i] = sum(as.matrix(beta) != 0)
+}
+```
+
+# Plot results using ggplot2
+```{r}
+ggplot(data=tradeoff) +
+  geom_point(aes(x=n_features, y=cv_error, color=as.factor(alpha)))
+```
+
+# Plot results using base-r
+```{r}
+score_range = range(tradeoff$cv_error)
+point_cols = c("#1a9850", "#91cf60", "#ffffbf", "#fc8d59", "#d73027")
+line_cols = c("#1b9e77", "#66a61e", "#d95f02", "#e7298a", "#7570b3")
+
+score_breaks = seq(score_range[1], score_range[2], length.out = length(point_cols) + 1)
+color_id = cut(tradeoff$cv_error, breaks = score_breaks, include.lowest = TRUE, labels = FALSE)
+tradeoff$point_col = point_cols[color_id]
+legend_labels = paste0(
+  sprintf("%.3f", score_breaks[-length(score_breaks)]),
+  " - ",
+  sprintf("%.3f", score_breaks[-1])
+)
+
+
+plot(NA,
+     xlim = range(lambda_grid),
+     ylim = range(tradeoff$n_features),
+     log = "x",
+     xlab = "lambda",
+     ylab = "Number of non-zero coefficients",
+     main = "Sparsity / accuracy tradeoff")
+
+for (j in seq_along(alpha_values)) {
+  alpha_j = alpha_values[j]
+  tradeoff_j = tradeoff[tradeoff$alpha == alpha_j, ]
+
+  lines(tradeoff_j$lambda, tradeoff_j$n_features, col = line_cols[j], lwd = 2)
+  points(tradeoff_j$lambda, tradeoff_j$n_features,
+         pch = 21,
+         bg = tradeoff_j$point_col,
+         col = line_cols[j],
+         cex = 1.1)
+}
+
+legend("topright",
+       legend = paste("alpha =", alpha_values),
+       col = line_cols,
+       lwd = 2,
+       pch = 21,
+       pt.bg = "white",
+       bty = "n")
+
+legend("bottomleft",
+       legend = legend_labels,
+       fill = point_cols,
+       title = "CV error",
+       bty = "n",
+       cex = 0.8)
+```
+
+
+### alternative: use auto_tuner already here
+```{r}
+at_test = auto_tuner(
+  tuner = tnr("random_search", batch_size = 20),
+  learner = graph_learner_elastic_net_auto,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 50)
+)
+
+set.seed(2026)
+at_test$train(task_train)
+at_test$predict(task_test)$score(msr("regr.rmse"))
+at_test$tuning_instance$result_learner_param_vals
+```
+
+
+### see beta
+```{r}
+graph_learner_elastic_net$model$regr.glmnet$model$beta
+```
+
+
+
+#################################
+### Nested Cross Validation
+
+```{r}
+at = auto_tuner(
+  tuner = tnr("random_search", batch_size=20),
+  learner = graph_learner_elastic_net,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 50)
+)
+
+set.seed(2026)
+rr = resample(task, at , rsmp("cv", folds = 5))
+rr
+rr$score(msr("regr.rmse"))[, .(iteration, regr.rmse)]
+rr$aggregate(msr("regr.rmse"))
+
+```
+
+######## result on test set
+
+```{r}
+graph_learner_elastic_net$param_set$values = instance$result_learner_param_vals
+graph_learner_elastic_net$train(task_train)
+graph_learner_elastic_net$predict(task_test)$score(msr("regr.rmse"))
+
+archive_dt = as.data.table(instance$archive)
+```
+
+
+
+
+
+
+
+
