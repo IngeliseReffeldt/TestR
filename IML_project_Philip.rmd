@@ -21,6 +21,7 @@ library(forcats)
 ### Noter:
 
 - GOAL: you should build models predicting ClaimAmount conditional on Exposure = 1
+kagemand
 
 
 ```{r}
