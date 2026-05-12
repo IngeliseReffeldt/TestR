@@ -1,0 +1,192 @@
+---
+title: "IML_KNN"
+author: "Philip Nordfang"
+date: "2026-05-12"
+output: html_document
+---
+
+```{r}
+library(mlr3)
+library(mlr3learners)
+library(mlr3tuning)
+library(mlr3mbo)
+library(mlr3pipelines)
+library(paradox)
+library(future)
+library(tidyverse)
+library(forcats)
+library(mlr3extralearners)
+library(OpenML)
+library(mgcv)
+library(kknn)
+```
+
+###### DATA HANDLING ######
+```{r}
+MPL_data = freMPL
+```
+
+```{r}
+summary(MPL_data)
+```
+
+```{r}
+data_exp <- subset(MPL_data, Exposure == 1)
+```
+
+```{r}
+unique(data_exp$RecordEnd)
+```
+
+```{r}
+hist(data_exp$ClaimAmount, main ="Claim amount distribution",
+    xlab ="Claim Amount",
+    col ="blue")
+```
+
+```{r}
+data_exp <- subset(data_exp, select = -c(RecordEnd, RecordBeg, ClaimInd))
+```
+
+```{r}
+# Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data
+data_exp_lump <- data_exp
+
+factor_cols <- names(data_exp_lump)[sapply(data_exp_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  data_exp_lump[[col]] <- as.factor(data_exp_lump[[col]])
+  data_exp_lump[[col]] <- fct_lump_min(data_exp_lump[[col]], min = 10)
+  data_exp_lump[[col]] <- droplevels(data_exp_lump[[col]])
+}
+```
+
+```{r}
+unique(data_exp_lump$SocioCateg)
+```
+
+### convert categorical variables to factors
+```{r}
+categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+data_exp_lump[categorical_vars] <- lapply(data_exp_lump[categorical_vars], factor)
+```
+
+##### DEFINING KNN MODEL #####
+
+```{r}
+task_knn <- TaskRegr$new(
+  id = "claims",
+  backend = data_exp_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+graph_knn <- 
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  lrn("regr.kknn")
+```
+
+```{r}
+learner_knn <- as_learner(graph_knn)
+```
+
+```{r}
+set.seed(2026)
+
+split_knn <- partition(task_knn, ratio = 0.8)
+
+train_set_knn <- split_knn$train
+test_set_knn  <- split_knn$test
+```
+
+```{r}
+learner_knn$train(task_knn, row_ids = train_set_knn)
+```
+
+```{r}
+prediction_knn <- learner_knn$predict(task_knn, row_ids = test_set_knn)
+```
+
+```{r}
+prediction_knn$score(msr("regr.rmse"))
+prediction_knn$score(msr("regr.mae"))
+prediction_knn$score(msr("regr.rsq"))
+```
+
+#### TUNING ####
+
+```{r}
+learner_knn <- lrn(
+  "regr.kknn",
+  k = to_tune(1, 50)
+)
+```
+
+```{r}
+graph_knn <- 
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  learner_knn
+
+graph_learner_knn <- as_learner(graph_knn)
+```
+
+```{r}
+at_knn <- auto_tuner(
+  tuner = tnr("random_search"),
+  learner = graph_learner_knn,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 20)
+)
+```
+
+```{r}
+at_knn$train(task_knn, row_ids = train_set_knn)
+```
+
+```{r}
+at_knn$tuning_result
+```
+
+```{r}
+pred_knn <- at_knn$predict(task_knn, row_ids = test_set_knn)
+
+pred_knn$score(msr("regr.rmse"))
+pred_knn$score(msr("regr.mae"))
+pred_knn$score(msr("regr.rsq"))
+```
+Note that mae is lower after tuning the model. However rmse and rsq have become worse despite of rmse being the loss function that the tuner was minimizing. This is likely due to large claims in the test data that the model fails to accurately predict. These Loss-measures suffer more from wrongly predicted outliers than mae because of their exponent. BUT - the knn model does generally not perform well on data with many categorical features and skewed data so we are not very interested in proceeding with optimizing this model before trying out alternative models.
+
+#### BASELINE MODEL FOR COMPARISON ######
+
+```{r}
+baseline <- lrn("regr.featureless")
+```
+
+```{r}
+baseline$train(task_knn, row_ids = split_knn$train)
+```
+
+```{r}
+pred_baseline <- baseline$predict(task_knn, row_ids = split_knn$test)
+```
+
+```{r}
+pred_baseline$score(msr("regr.rmse"))
+pred_baseline$score(msr("regr.mae"))
+pred_baseline$score(msr("regr.rsq"))
+```
+We see a worse performance for every loss-measure from the baseline model, indicating that even though the knn-model struggles with many categorical variables, the model still is an improvement from merely predicting the mean. 
+
+
+
+
+
+
+
+
+
+
