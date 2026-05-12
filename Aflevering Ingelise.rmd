@@ -37,226 +37,148 @@ freMPL$VehMaxSpeed <- factor(freMPL$VehMaxSpeed,
                                         "180-190 km/h", "190-200 km/h", "200-220 km/h",
                                         "220+ km/h"))
 
+freMPL <- freMPL[,-5]
+
 # Do we need to do something to SocioCateg?
 # Why do ClaimInt = 0 have negative ClaimAmount? subset = freMPL[freMPL$ClaimInd == 0,]
 ```
 
+##Week 3
 ```{r}
-View(freMPL)
-summary(freMPL)
-table(freMPL$VehAge)
-table(freMPL$MariStat)
-table(freMPL$SocioCateg)
+categorical_vars <- c("RecordBeg","Gender","MariStat","SocioCateg","VehUsage","VehBody","VehPrice","VehEngine","VehEnergy","VehClass", "Garage")
+freMPL$data[categorical_vars] <- lapply(freMPL$data[categorical_vars], factor)
+```
+```{r}
+freMPL$RecordBeg <- factor(freMPL$RecordBeg)
+freMPL$Gender <- factor(freMPL$Gender)
+freMPL$MariStat <- factor(freMPL$MariStat)
+freMPL$SocioCateg <- factor(freMPL$SocioCateg)
+freMPL$VehUsage <- factor(freMPL$VehUsage)
+freMPL$VehBody <- factor(freMPL$VehBody)
+freMPL$VehPrice <- factor(freMPL$VehPrice)
+freMPL$VehEngine <- factor(freMPL$VehEngine)
+freMPL$VehEnergy <- factor(freMPL$VehEnergy)
+freMPL$VehClass <- factor(freMPL$VehClass)
+freMPL$Garage <- factor(freMPL$Garage)
+
+
+```
+
+We have to fit a linear model count ~ LicAge first.
+```{r}
+task_count_on_windspeed = as_task_regr(freMPL, target="ClaimInd")$select("LicAge")
+lrn_count_on_windspeed = lrn("regr.lm")
+lrn_count_on_windspeed$train(task_count_on_windspeed)
+intercept = lrn_count_on_windspeed$model$coefficients[1]
+univariate_windspeed_slope = lrn_count_on_windspeed$model$coefficients[2]
+
+ggplot() +
+  geom_point(mapping=aes(x = task_count_on_windspeed$data(cols=c("LicAge"))$LicAge, y=task_count_on_windspeed$truth())) +
+  geom_abline(intercept=intercept, slope=univariate_windspeed_slope, color="red") +
+  labs(x="LicAge", y="Count")
+```
+Now, let's fit a model using all coefficients.
+
+```{r}
+task_count_on_all = as_task_regr(freMPL, target="ClaimInd")
+lrn_count_on_all = as_learner(po("encode", method="treatment") %>>% lrn("regr.lm"))
+lrn_count_on_all$train(task_count_on_all)
+
+joint_windspeed_slope = lrn_count_on_all$pipeops$regr.lm$learner_model$model$coefficients["LicAge"]
+
+print(univariate_windspeed_slope)
+print(joint_windspeed_slope)
+```
+
+Now, let's do the orthogonalization procedure from the FWL theorem.
+
+```{r}
+task_count_on_allother = as_task_regr(freMPL, target="ClaimInd")$select(setdiff(names(freMPL), c("LicAge", "ClaimInd")))
+task_windspeed_on_allother = as_task_regr(freMPL, target="LicAge")$select(setdiff(names(freMPL), c("LicAge", "ClaimInd")))
+
+lrn_count_on_allother = as_learner(po("encode", method="treatment") %>>% lrn("regr.lm"))
+lrn_count_on_allother$train(task_count_on_allother)
+pred_count_on_allother = lrn_count_on_allother$predict(task_count_on_allother)
+count_residuals = pred_count_on_allother$truth - pred_count_on_allother$response
+
+lrn_windspeed_on_allother = as_learner(po("encode", method="treatment") %>>% lrn("regr.lm"))
+lrn_windspeed_on_allother$train(task_windspeed_on_allother)
+pred_windspeed_on_allother = lrn_windspeed_on_allother$predict(task_windspeed_on_allother)
+windspeed_residuals = pred_windspeed_on_allother$truth - pred_windspeed_on_allother$response
+
+count_res_on_windspeed_res = lm(count_residuals ~ windspeed_residuals)
+print(count_res_on_windspeed_res$coefficients[2])
+print(joint_windspeed_slope)
+```
+We should also plot the FWL residual regression.
+
+```{r}
+ggplot() +
+  geom_point(mapping=aes(x=windspeed_residuals, y=count_residuals)) +
+  geom_abline(
+    slope=count_res_on_windspeed_res$coefficients[2],
+    intercept=count_res_on_windspeed_res$coefficients[1],
+    color="red"
+    )
+```
+
+Now, we have to repeat this procedure, but using cross-fitting and a non-linear nuisance regression.
+
+We start by defining the tasks and learners.
+
+```{r}
+# task_count_on_allother # Already defined above
+# task_windspeed_on_allother # Already defined above
+lrn_count_on_allother_smooth = auto_tuner(
+  tnr("random_search"),
+  lrn(
+    "regr.gam",
+    formula=ClaimInd ~ offset(log(Exposure)) + RecordBeg + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    gamma = to_tune(1,1e3,logscale=TRUE),
+    select = to_tune(c(TRUE, FALSE)),
+    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
+  ),
+  measure = msr("regr.mse"),
+  resampling = rsmp("cv", folds=2),
+  terminator = trm("evals", n_evals=20)
+)
+lrn_windspeed_on_allother_smooth = auto_tuner(
+  tnr("random_search"),
+  lrn(
+    "regr.gam",
+    formula=LicAge ~ offset(log(Exposure)) + RecordBeg + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    gamma = to_tune(1,1e3,logscale=TRUE),
+    select = to_tune(c(TRUE, FALSE)),
+    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
+  ),
+  measure = msr("regr.mse"),
+  resampling = rsmp("cv", folds=2),
+  terminator = trm("evals", n_evals=20)
+)
+
+
+cross_fit = function(task, learner, K){
+  set.seed(0)
+  outer_resampling = rsmp("cv", folds=K)
+  rr = resample(task, learner, outer_resampling)
+  pred = rr$prediction() 
+  pred$truth - pred$response
+}
+
+count_residuals_smooth = cross_fit(task_count_on_allother, lrn_count_on_allother_smooth, K=5)
+windspeed_residuals_smooth = cross_fit(task_windspeed_on_allother, lrn_windspeed_on_allother_smooth, K=5)
+```
+After having performed the cross fitting, we fit the ordinary linear model for the coefficient for windspeed.
+
+```{r}
+lm_count_on_windspeed_smooth = lm(count_residuals_smooth ~ windspeed_residuals_smooth)
+lm_count_on_windspeed_smooth$coefficients[2] # Slope
+# Q: Is this supposed to be differnt from the previously estimated slope? Why?
 ```
 
 ```{r}
-plot(freMPL$DrivAge, freMPL$LicAge)
-plot(freMPL$DrivAge, freMPL$BonusMalus)
-plot(freMPL$DrivAge, freMPL$ClaimInd)
+ggplot() + 
+  geom_point(mapping = aes(x=windspeed_residuals_smooth, y=count_residuals_smooth)) +
+  geom_abline(slope=lm_count_on_windspeed_smooth$coefficients[2], intercept=lm_count_on_windspeed_smooth$coefficients[1], color="red")
 ```
-
-```{r}
-table(freMPL$VehBody, freMPL$VehUsage)
-```
-```{r}
-names(freMPL)
-```
-
-An overview of all the covariates: 
-```{r}
-# Exposure
-ggplot(freMPL, aes(x = Exposure)) + 
-  geom_histogram(bins = 50, fill = "blue", col = "white") + 
-  theme_minimal()
-# LicAge
-ggplot(freMPL, aes(x = LicAge/12)) + 
-  geom_histogram(bins = 50, fill = "blue", col = "white") + 
-  xlab("LicAge in years") + 
-  theme_minimal()
-# RecordBeg
-ggplot(freMPL, aes(x = RecordBeg)) + 
-  geom_histogram(bins = 13, fill = "blue", col = "white") + 
-  theme_minimal()
-# RecordEnd
-ggplot(freMPL, aes(x = RecordEnd)) + 
-  geom_histogram(bins = 13, fill = "blue", col = "white") + 
-  theme_minimal()
-# VehAge
-ggplot(freMPL, aes(x = VehAge)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# Gender
-ggplot(freMPL, aes(x = Gender)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# Maristat
-ggplot(freMPL, aes(x = MariStat)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# SocioCateg
-ggplot(freMPL, aes(x = SocioCateg)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal() + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-# VehUsage
-ggplot(freMPL, aes(x = VehUsage)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# DrivAge
-ggplot(freMPL, aes(x = DrivAge)) + 
-  geom_histogram(bins = 30, fill = "blue", col = "white") + 
-  theme_minimal()
-# HasKmLimit (A numeric, 1 if there is a km limit for the policy, 0 otherwise)
-ggplot(freMPL, aes(x = HasKmLimit)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# BonusMalus
-ggplot(freMPL, aes(x = BonusMalus)) + 
-  geom_histogram(bins = 30, fill = "blue", col = "white") + 
-  theme_minimal()
-# VehBody
-ggplot(freMPL, aes(x = VehBody)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-# VehPrice (vehicle price from "A" (cheapest) to "Z" (most expensive))
-ggplot(freMPL, aes(x = VehPrice)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# VehEngine
-ggplot(freMPL, aes(x = VehEngine)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# VehEnergi
-ggplot(freMPL, aes(x = VehEnergy)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# VehMaxSpeed
-ggplot(freMPL, aes(x = VehMaxSpeed)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-# VehClass
-ggplot(freMPL, aes(x = VehClass)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# RiskVar
-ggplot(freMPL, aes(x = RiskVar)) + 
-  geom_histogram(bins = 20, fill = "blue", col = "white") + 
-  theme_minimal()
-# Garage
-ggplot(freMPL, aes(x = Garage)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-# ClaimInd (Claim indicator of the guarantee. (this is not the claim number))
-ggplot(freMPL, aes(x = ClaimInd)) + 
-  geom_bar(fill = "blue", col = "white") + 
-  theme_minimal()
-```
-
-```{r}
-# This below takes to long time: 
-# subset_freMPL <- subset(freMPL, select = -c(SocioCateg, VehPrice)) # Too high cardinality
-# sub_task = as_task_regr(subset_freMPL, target = "ClaimAmount")
-# autoplot(sub_task, type = "pairs")
-```
-
-Responce variable: ClaimAmount
-This variable looks heavytailed. 
-```{r}
-ggplot(freMPL, aes(x = ClaimAmount)) + 
-  geom_histogram(bins = 20, fill = "blue", col = "white") + 
-  theme_minimal()
-```
-
-
-# Noter: Hvilke tanker tænker vi at gennemgå?
-Ridge regression, Lasso regression 
-Spearman plot for at undersøge korrelationer mellem features
-
-# Forsøg på at gentage det, vi lavede i øvelserne i Week2_Sol:
-
-Define a task: 
-```{r}
-task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task 
-```
-
-Put into train/test set
-```{r}
-set.seed(2026)
-splits = partition(task, ratio = 0.8)
-
-task_train = task$clone()$filter(splits$train)
-task_test = task$clone()$filter(splits$test)
-```
-
-Define learner
-```{r}
-# my_learner = lrn("regr.rpart") # regression tree
-# lrn("regr.rpart")$help() # Help
-# Note: my_learner doesn't work because data contains characters, and rpart
-# doesn't know how to handle this
-
-task_train$feature_types
-
-graph =
-  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
-  po("datefeatures") %>>%   # converts Date → numeric features
-  po("encode") %>>%
-  lrn("regr.rpart")
-
-learner = as_learner(graph)
-
-learner$train(task_train)
-learner$predict(task_test)$score(msrs(c("regr.mse","regr.mae")))
-```
-The above i basically a manual holdout. Holdout below: 
-```{r}
-set.seed(2026)
-
-resampling = rsmp("holdout", ratio = 0.8)
-rr = resample(task, learner, resampling)
-
-rr$aggregate(msrs(c("regr.mse","regr.mae")))
-```
-Notice how this gives the same result as the manual approch above.
-
-Take a look at the model
-```{r}
-learner$model
-
-learner$model$regr.rpart$model
-```
-Comments on the regression tree: 
-* First split is on ClaimInt: Makes sence to split between if a claim i covered (is this what ClaimInt tells? And does it makes sence to use this for predicting? We don't know for a future claim if it is rejected or not. But if it means wheather a claim is covered by the insurance, then it might make sence to keep it in the model)
-* Does it logically makes sence to split by the day (seasons with split by month might make better sence)
-* Does it make sence to split by day of week? 
-* Split by BonusMalus around 100 makes sence (under 100 good, over bad)
-* Split by LicAge makes sence: But it predicts lower for "young" customers?? (the once 
-who havent had a licence for a long time) (but split by 571.9 ~ 47,7 years of divers licence 
---> makes driver older than 47,7+18 = 65,7)
-
-
-Featureless learner: 
-For comparison we train a featureless model (no covariates). 
-This model just predicts the mean (no gain of infomation from covariates). 
-```{r}
-baseline <- lrn("regr.featureless")$train(task_train)
-baseline$predict(task_test)$score(msrs(c("regr.mse","regr.mae")))
-```
-The regression tree performs better than featureless.
-Note that data is pre-processed: 
-* colapply fixes characters
-* datefeatures fixes dates
-* encode turns factors into numbers
-
-Why use pipelines instead of cleaning data yourself: 
-* The pre-processing is learned on the train-data
-* The same pre-processing is used on the test-data (no "knowledge" from test-data
-is leaked to the pre-processing part)
-* Det skaber en fejl i resultat, hvis testdata benyttes til at konvertere data. 
-
-Why use rsmp() and resample(): 
-* Shorter code - the split is handled by the functions, and thus no need to split data.
-* The result is the same though
 
