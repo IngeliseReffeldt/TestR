@@ -8,7 +8,6 @@ date: "2026-05-01"
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 # Library
 ```{r}
 library(mlr3)
@@ -20,9 +19,11 @@ library(paradox)
 library(readr)
 library(tidyverse)
 library(mlr3viz)
+
+library(rpart.plot) # Visualisering af decision trees
 ```
 
-# Load data
+# Load data and overview
 Below is data loaded, and ajustments are made: 
 ```{r}
 freMPL <- read_csv("freMPL.csv")
@@ -39,6 +40,9 @@ freMPL$VehMaxSpeed <- factor(freMPL$VehMaxSpeed,
 
 # Do we need to do something to SocioCateg?
 # Why do ClaimInt = 0 have negative ClaimAmount? subset = freMPL[freMPL$ClaimInd == 0,]
+
+# Variable, der skal fjernes 
+freMPL <- subset(freMPL, select = -`...1`) 
 ```
 
 ```{r}
@@ -155,6 +159,16 @@ ggplot(freMPL, aes(x = ClaimInd)) +
 ```
 
 ```{r}
+range(freMPL$ClaimAmount)
+freMPL[freMPL$ClaimAmount < 0,]
+```
+
+```{r}
+plot(freMPL$Exposure,freMPL$ClaimAmount)
+```
+
+
+```{r}
 # This below takes to long time: 
 # subset_freMPL <- subset(freMPL, select = -c(SocioCateg, VehPrice)) # Too high cardinality
 # sub_task = as_task_regr(subset_freMPL, target = "ClaimAmount")
@@ -170,11 +184,13 @@ ggplot(freMPL, aes(x = ClaimAmount)) +
 ```
 
 
-# Noter: Hvilke tanker tænker vi at gennemgå?
+# Noter: Hvilke ting tænker vi at gennemgå?
 Ridge regression, Lasso regression 
 Spearman plot for at undersøge korrelationer mellem features
 
 # Forsøg på at gentage det, vi lavede i øvelserne i Week2_Sol:
+
+## Decision tree
 
 Define a task: 
 ```{r}
@@ -236,8 +252,12 @@ Comments on the regression tree:
 who havent had a licence for a long time) (but split by 571.9 ~ 47,7 years of divers licence 
 --> makes driver older than 47,7+18 = 65,7)
 
+```{r}
+rpart.plot(learner$model$regr.rpart$model)
+```
 
-Featureless learner: 
+
+## Featureless learner: 
 For comparison we train a featureless model (no covariates). 
 This model just predicts the mean (no gain of infomation from covariates). 
 ```{r}
@@ -259,4 +279,201 @@ is leaked to the pre-processing part)
 Why use rsmp() and resample(): 
 * Shorter code - the split is handled by the functions, and thus no need to split data.
 * The result is the same though
+
+# Linear regression
+week 3
+
+```{r}
+# Create task - but removed some features because of missing values/not many values
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task -- same as above 
+task$select(setdiff(task$feature_names, c("...1", "RecordEnd", "SocioCateg")))
+
+# Define a learner
+lrn_lm = as_learner(
+    po("datefeatures") %>>% 
+    #po("imputesample") %>>%
+    po("encode", method="treatment") %>>% 
+    lrn("regr.lm"))
+
+# Train and test learner
+set.seed(2026)
+resampling = rsmp("holdout", ratio = 0.8)
+rr = resample(task, lrn_lm, resampling)
+
+rr$aggregate(msrs(c("regr.mse","regr.mae")))
+```
+
+What does po("encode", method="treatment") do: 
+* creates a pipeline operator that converts categorical/factor variables into numeric dummy variables using treatment coding.
+What does po("datefeatures") do: 
+* converts dates into usable numeric variables such as year, month, day etc. 
+
+# Clean comparison 
+Define task
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount")
+task$select(setdiff(task$feature_names, c("...1", "RecordEnd", "SocioCateg")))
+```
+
+Mulige learners
+```{r}
+mlr_learners$keys("^regr")
+```
+
+
+Define learners for comparison 
+```{r}
+graph = po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode")
+
+lrn_tree = as_learner(
+  graph %>>%
+  lrn("regr.rpart"))
+
+lrn_lm = as_learner(
+  graph %>>%
+  lrn("regr.lm"))
+
+lrn_featureless = as_learner(
+  graph %>>%
+  lrn("regr.featureless"))
+
+lrn_gam = as_learner(
+  graph %>>%
+  lrn("regr.gam"))
+```
+
+Train and test-split to use
+```{r}
+set.seed(2026)
+resampling = rsmp("holdout", ratio = 0.8)
+```
+
+```{r}
+rr_tree = resample(task, lrn_tree, resampling)
+rr_lm = resample(task, lrn_lm, resampling)
+rr_featureless = resample(task, lrn_featureless, resampling)
+rr_gam = resample(task, lrn_gam, resampling)
+```
+
+Score
+```{r}
+cat("tree model:\n")
+rr_tree$aggregate(msrs(c("regr.mse", "regr.rmse", "regr.mae")))
+
+cat("\nlm model:\n")
+rr_lm$aggregate(msrs(c("regr.mse", "regr.rmse", "regr.mae")))
+
+cat("\nfeatureless model:\n")
+rr_featureless$aggregate(msrs(c("regr.mse", "regr.rmse", "regr.mae")))
+
+cat("\ngam model:\n")
+rr_gam$aggregate(msrs(c("regr.mse", "regr.rmse", "regr.mae")))
+```
+
+# GAM with auto-tuner 
+
+```{r}
+lrn_gam_tune = auto_tuner(
+  tnr("random_search"),
+  as_learner(
+  graph %>>%
+  lrn("regr.gam",
+    #formula=count ~ s(temp) + s(feel_temp) + s(humidity) + season + year + month + hour + holiday + weekday + weather,
+    gamma = to_tune(1,1e3,logscale=TRUE),
+    select = to_tune(c(TRUE, FALSE)),
+    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
+  )),
+  measure = msr("regr.mse"),
+  resampling = rsmp("cv", folds=2),
+  terminator = trm("evals", n_evals=20)
+)
+
+outer_resampling = rsmp("cv", folds=5)
+
+rr_gam_tune = resample(task, lrn_gam_tune, outer_resampling)
+
+rr_gam_tune$aggregate(msrs(c("regr.mse", "regr.rmse", "regr.mae")))
+```
+
+# Random forrest 
+
+```{r}
+lrn("regr.ranger")$help()
+```
+
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task 
+
+graph =
+  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode") %>>%
+  lrn("regr.rpart")
+
+learner = as_learner(graph)
+
+set.seed(2026)
+resampling = rsmp("holdout", ratio = 0.8)
+
+rr = resample(task, learner, resampling, store_models = TRUE) # True så den kan hived ud efterfølgende
+
+rr$aggregate(msrs(c("regr.mse","regr.rmse","regr.mae")))
+```
+
+```{r}
+rr$learners[[1]]$model$regr.rpart$model
+```
+
+Prøver at køre setup, hvor datoer fjernes, da det virker sjovt at selve ugedagen/tid på måned mv. har indflydelse på modellen 
+
+```{r}
+# Task 1 - fjerner slutdato
+task = as_task_regr(freMPL, target = "ClaimAmount")$select(setdiff(names(freMPL), c("RecordEnd", "ClaimAmount"))) # Regression task uden datoer
+
+# Task 2 - fjerner slutdato + claim index
+task = as_task_regr(freMPL, target = "ClaimAmount")$select(setdiff(names(freMPL), c("RecordEnd", "ClaimAmount", "ClaimInd")))
+
+# Task 3 - fjerner slutdato + startdato
+task = as_task_regr(freMPL, target = "ClaimAmount")$select(setdiff(names(freMPL), c("RecordEnd", "ClaimAmount", "RecordBeg")))
+
+graph =
+  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode") %>>%
+  lrn("regr.rpart")
+
+learner = as_learner(graph)
+
+set.seed(2026)
+resampling = rsmp("holdout", ratio = 0.8)
+
+rr = resample(task, learner, resampling, store_models = TRUE) # True så den kan hived ud efterfølgende
+
+rr$aggregate(msrs(c("regr.mse","regr.rmse","regr.mae")))
+
+rr$learners[[1]]$model$regr.rpart$model
+```
+Ovenstående task1 har en en bedre prediktion end den model, hvor der ikke pilles ved noget
+
+task 0: Ingenting gjort
+    regr.mse    regr.rmse     regr.mae 
+987089.37673    993.52372     93.75692 
+
+task 1: Enddate fjernet
+    regr.mse    regr.rmse     regr.mae 
+859213.36741    926.93763     90.42977 
+
+task 2: Enddate + ClaimInd fjernet
+   regr.mse   regr.rmse    regr.mae 
+976935.7655    988.4006    185.8948 
+
+task 3: Enddate + Startdate fjernet (bedre mse end task 1 - men dårligere mae)
+    regr.mse    regr.rmse     regr.mae 
+819371.73950    905.19155     91.16164 
+
+
+
+
 
