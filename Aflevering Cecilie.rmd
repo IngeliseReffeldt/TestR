@@ -19,6 +19,7 @@ library(paradox)
 library(readr)
 library(tidyverse)
 library(mlr3viz)
+library(future)
 
 library(rpart.plot) # Visualisering af decision trees
 ```
@@ -397,7 +398,7 @@ rr_gam_tune = resample(task, lrn_gam_tune, outer_resampling)
 rr_gam_tune$aggregate(msrs(c("regr.mse", "regr.rmse", "regr.mae")))
 ```
 
-# Random forrest 
+# Decision trees og fjernede variable
 
 ```{r}
 lrn("regr.ranger")$help()
@@ -474,6 +475,82 @@ task 3: Enddate + Startdate fjernet (bedre mse end task 1 - men dårligere mae)
 819371.73950    905.19155     91.16164 
 
 
+# Uge 4 øvelser: 
 
+Define task
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task 
+```
+
+Helper function for encoding - dummy encode categorical features
+```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+    po("datefeatures") %>>%
+    po("encode", method = "treatment",
+       affect_columns = categorical_selector, id = "binary_enc") %>>%
+    learner
+  )
+}
+```
+
+Define learner - full tree
+```{r}
+my_cart_learner = lrn("regr.rpart", cp = 0)
+
+full_tree = make_encoded_learner(my_cart_learner)
+full_tree$train(task)
+
+cart_trained <- full_tree$model$regr.rpart$model
+plot(cart_trained, compress = TRUE, margin = 0.1)
+text(cart_trained, use.n = TRUE, cex = 0.2) # Adjust cex (font size) as needed
+```
+Det er et meget stort træ, når der ingen begrænsninger er - det er faktisk slet ikke til at se, hvordan træet ser ud. 
+
+
+Optimal cp
+```{r}
+my_cart_learner_cv = lrn("regr.rpart",
+                         cp = 0,
+                         xval = 5)
+
+graph_learner_cart_cv = make_encoded_learner(my_cart_learner_cv)
+graph_learner_cart_cv$train(task)
+
+cart_trained_cv <- graph_learner_cart_cv$model$regr.rpart$model
+
+rpart::plotcp(cart_trained_cv)
+rpart::printcp(cart_trained_cv)
+```
+Hvorfor kommer der så mange værdier??
+
+
+```{r}
+cp_table = cart_trained_cv$cptable
+min_row = which.min(cp_table[, "xerror"])
+one_se_threshold = cp_table[min_row, "xerror"] + cp_table[min_row, "xstd"]
+
+selected_row = which(cp_table[, "xerror"] <= one_se_threshold)[1]
+selected_cp = cp_table[selected_row, "CP"]
+selected_cp
+```
+
+Pruned tree
+```{r}
+my_cart_learner_pruned = lrn("regr.rpart",
+                             cp = selected_cp)
+
+pruned_tree = make_encoded_learner(my_cart_learner_pruned)
+pruned_tree$train(task)
+
+cart_trained_pruned <- pruned_tree$model$regr.rpart$model
+
+plot(cart_trained_pruned, compress = TRUE, margin = 0.1)
+text(cart_trained_pruned, use.n = TRUE, cex = 0.5)
+```
+Denne model giver ikke rigtig mening ift. vores setup, fordi den ender med, bare at predicte på baggrund af hvorvidt der er sket en skade og ikke andet. 
 
 
