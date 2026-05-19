@@ -31,8 +31,9 @@ freMPL <- read_csv("freMPL.csv")
 # Pre-processing
 
 We remove ClaimInd from the dataset, since we want to predict a price for a given customer, and we don't know, if the customer will have a claim.
+Remove ...1 since it is just row_numbers.
 ```{r}
-MPL_data <- subset(freMPL, select = -ClaimInd)
+MPL_data <- subset(freMPL, select = -c(ClaimInd,...1))
 ```
 
 We replace null-values from RecordEnd, so we don't have to deal with null values.
@@ -72,6 +73,20 @@ categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", 
 
 MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
 ```
+
+Final data: 
+```{r}
+summary(MPL_data_lump)
+```
+
+# Generisk kunde 1: 
+```{r}
+customer1 <- 
+```
+
+
+
+
 
 
 
