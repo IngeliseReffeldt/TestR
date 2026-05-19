@@ -15,14 +15,16 @@ library(paradox)
 library(future)
 library(tidyverse)
 library(forcats)
+library(mlr3extralearners)
+library(OpenML)
+library(mgcv)
+library(kknn)
 ```
 
 
 ### Noter:
 
 - GOAL: you should build models predicting ClaimAmount conditional on Exposure = 1
-kagemand
-
 
 ```{r}
 MPL_data = freMPL
@@ -33,38 +35,37 @@ summary(MPL_data)
 ```
 
 ```{r}
-data_exp <- subset(MPL_data, Exposure == 1)
-```
-
-```{r}
-unique(data_exp$RecordEnd)
-```
-
-```{r}
-hist(data_exp$ClaimAmount, main ="Claim amount distribution",
+hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
     xlab ="Claim Amount",
     col ="blue")
 ```
 
 ```{r}
-data_exp <- subset(data_exp, select = -c(RecordEnd, RecordBeg, ClaimInd))
+MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
 ```{r}
 # Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data
-data_exp_lump <- data_exp
+MPL_data_lump <- MPL_data
 
-factor_cols <- names(data_exp_lump)[sapply(data_exp_lump, function(x) is.factor(x) || is.character(x))]
+factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
 
 for (col in factor_cols) {
-  data_exp_lump[[col]] <- as.factor(data_exp_lump[[col]])
-  data_exp_lump[[col]] <- fct_lump_min(data_exp_lump[[col]], min = 10)
-  data_exp_lump[[col]] <- droplevels(data_exp_lump[[col]])
+  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
+  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
+  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
 }
 ```
 
 ```{r}
-unique(data_exp_lump$SocioCateg)
+unique(MPL_data_lump$SocioCateg)
+```
+
+### convert categorical variables to factors
+```{r}
+categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
 ```
 
 
@@ -74,7 +75,7 @@ unique(data_exp_lump$SocioCateg)
 # Define task
 
 ```{r}
-task = as_task_regr(data_exp_lump, target = "ClaimAmount")
+task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
 ```
 
 # Create train and test set
@@ -323,7 +324,6 @@ graph_learner_elastic_net$predict(task_test)$score(msr("regr.rmse"))
 
 archive_dt = as.data.table(instance$archive)
 ```
-
 
 
 
