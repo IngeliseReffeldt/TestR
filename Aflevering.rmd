@@ -79,12 +79,17 @@ Final data:
 summary(MPL_data_lump)
 ```
 
+# Task
+```{r}
+task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
+```
+
+
 # Generisk kunde 1: 
 Gennemsnits kunde
 ```{r}
 customer1 <- 
 ```
-
 
 # Generisk kunde 2: 
 Ekstrem kunde
