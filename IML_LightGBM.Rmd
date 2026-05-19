@@ -1,0 +1,187 @@
+---
+title: "IML_LightGBM"
+author: "Philip Nordfang"
+date: "2026-05-19"
+output: html_document
+---
+
+```{r}
+library(mlr3)
+library(mlr3learners)
+library(mlr3tuning)
+library(mlr3mbo)
+library(mlr3pipelines)
+library(paradox)
+library(future)
+library(tidyverse)
+library(forcats)
+library(mlr3extralearners)
+library(OpenML)
+library(mgcv)
+library(kknn)
+library(lightgbm)
+```
+
+###### DATA HANDLING ######
+```{r}
+MPL_data = freMPL
+```
+
+```{r}
+summary(MPL_data)
+```
+
+
+```{r}
+hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
+    xlab ="Claim Amount",
+    col ="blue")
+```
+
+```{r}
+MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
+```
+
+```{r}
+# Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data
+MPL_data_lump <- MPL_data
+
+factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
+  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
+  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
+}
+```
+
+```{r}
+unique(MPL_data_lump$SocioCateg)
+```
+
+### convert categorical variables to factors
+```{r}
+categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
+```
+
+##### DEFINING XGBoost MODEL #####
+
+```{r}
+task_lgb <- TaskRegr$new(
+  id = "claim_amount",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task_lgb, ratio = 0.8)
+
+train_set <- split$train
+test_set  <- split$test
+```
+
+```{r}
+learner_lgb <- as_learner(
+  
+  po("encode", method = "one-hot") %>>%
+    
+    lrn("regr.lightgbm",
+        objective = "regression",
+        verbose = -1
+    )
+)
+```
+
+```{r}
+search_space <- ps(
+  regr.lightgbm.learning_rate =
+    p_dbl(0.01, 0.2),
+  regr.lightgbm.num_leaves =
+    p_int(15, 150),
+  regr.lightgbm.max_depth =
+    p_int(3, 12),
+  regr.lightgbm.feature_fraction =
+    p_dbl(0.5, 1),
+  regr.lightgbm.bagging_fraction =
+    p_dbl(0.5, 1),
+  regr.lightgbm.min_data_in_leaf =
+    p_int(10, 100),
+  regr.lightgbm.num_iterations =
+    p_int(100, 1000)
+)
+```
+
+```{r}
+resampling <- rsmp("cv", folds = 5)
+```
+
+```{r}
+tuner <- tnr("random_search")
+```
+
+```{r}
+terminator <- trm("evals", n_evals = 50)
+```
+
+```{r}
+instance <- TuningInstanceBatchSingleCrit$new(
+  task = task_lgb,
+  learner = learner_lgb,
+  resampling = resampling,
+  measure = msr("regr.rmse"),
+  search_space = search_space,
+  terminator = terminator
+)
+```
+
+```{r}
+plan(multisession)
+tuner$optimize(instance)
+```
+
+
+```{r}
+learner_lgb$param_set$values <- instance$result_learner_param_vals
+```
+
+```{r}
+learner_lgb$train(task_lgb, row_ids = train_set)
+```
+
+```{r}
+pred_lgb <- learner_lgb$predict(task_lgb, row_ids = test_set)
+
+pred_lgb$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+
+#### BASELINE MODEL FOR COMPARISON ######
+
+```{r}
+baseline <- lrn("regr.featureless")
+```
+
+```{r}
+baseline$train(task_knn, row_ids = split_knn$train)
+```
+
+```{r}
+pred_baseline <- baseline$predict(task_knn, row_ids = split_knn$test)
+```
+
+```{r}
+pred_baseline$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
