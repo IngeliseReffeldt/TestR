@@ -26,34 +26,21 @@ library(mlr3viz)
 
 ```{r}
 freMPL <- read_csv("freMPL.csv")
-
-MPL_data <- subset(freMPL, select = -ClaimInd)
-MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
 # Pre-processing
 
+We remove ClaimInd from the dataset, since we want to predict a price for a given customer, and we don't know, if the customer will have a claim.
 ```{r}
-# Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data
-MPL_data_lump <- MPL_data
-
-factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
-
-for (col in factor_cols) {
-  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
-  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
-  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
-}
+MPL_data <- subset(freMPL, select = -ClaimInd)
 ```
 
+We replace null-values from RecordEnd, so we don't have to deal with null values.
 ```{r}
-categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
-MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
+MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
-
-
-Skal det her med? 
+Ordered factors and factors.
 ```{r}
 # VehAge is an ordered variable
 freMPL$VehAge <- factor(freMPL$VehAge, levels = c("0", "1", "2", "3", "4", "5", "6-7", "8-9", "10+"))
@@ -64,4 +51,27 @@ freMPL$VehMaxSpeed <- factor(freMPL$VehMaxSpeed,
                                         "150-160 km/h", "160-170 km/h", "170-180 km/h", 
                                         "180-190 km/h", "190-200 km/h", "200-220 km/h",
                                         "220+ km/h"))
+
+# HasKmLimit
+freMPL$HasKmLimit <- factor(freMPL$HasKmLimit)
 ```
+
+Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data. 
+```{r}
+MPL_data_lump <- MPL_data
+
+factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
+  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
+  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
+}
+
+categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+
+MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
+```
+
+
+
