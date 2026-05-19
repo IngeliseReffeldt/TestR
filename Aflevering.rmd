@@ -80,12 +80,14 @@ summary(MPL_data_lump)
 ```
 
 # Generisk kunde 1: 
+Gennemsnits kunde
 ```{r}
 customer1 <- 
 ```
 
 
-
+# Generisk kunde 2: 
+Ekstrem kunde
 
 
 
