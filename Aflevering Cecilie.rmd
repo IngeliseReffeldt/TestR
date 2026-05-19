@@ -553,4 +553,261 @@ text(cart_trained_pruned, use.n = TRUE, cex = 0.5)
 ```
 Denne model giver ikke rigtig mening ift. vores setup, fordi den ender med, bare at predicte på baggrund af hvorvidt der er sket en skade og ikke andet. 
 
+# Random forrest fra uge 4
+
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task 
+
+my_ranger_learner = lrn("regr.ranger",
+                        mtry.ratio = to_tune(0.1, 1),
+                        min.node.size = to_tune(p_int(1, 50)))
+
+# graph_learner_ranger = make_encoded_learner(my_ranger_learner) 
+#as_learner(
+#  po("encode", method = "treatment",
+#     affect_columns = categorical_selector, id = "binary_enc") %>>%
+#    po("scale") %>>%
+#    my_ranger_learner
+#)
+
+graph =
+  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode", method = "treatment") %>>%
+  my_ranger_learner
+
+graph_learner_ranger = as_learner(graph)
+
+at_ranger = auto_tuner(
+  tuner = tnr("random_search", batch_size = 20),
+  learner = graph_learner_ranger,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 50)
+)
+```
+
+Denne tager meget lang tid, derfor har jeg stoppet den
+```{r}
+baseline = lrn("regr.featureless")
+
+res = benchmark(
+  benchmark_grid(
+    task = list(task),
+    learners = list(baseline,
+                    at_ranger),
+    resamplings = list(rsmp("cv", folds = 3))
+  ),
+  store_models = TRUE
+)
+```
+
+# Random forrest
+
+Random forrest uden tuning
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task
+
+graph =
+  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode") %>>%
+  lrn("regr.ranger")
+
+learner = as_learner(graph)
+# learner = as_learner(graph, store_backends = TRUE)
+
+set.seed(2026)
+
+resampling = rsmp("holdout", ratio = 0.8)
+
+rr = resample(task, learner, resampling, store_models = TRUE) # True så den kan hived ud efterfølgende
+
+rr$aggregate(msrs(c("regr.mse","regr.rmse","regr.mae")))
+```
+
+```{r}
+rr$learners[[1]]$model
+
+rr$learners[[1]]$model$regr.ranger
+
+rr$learners[[1]]$param_set$values
+
+rr$prediction()
+```
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task
+
+graph =
+  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode") %>>%
+  lrn("regr.ranger")
+
+# learner = as_learner(graph)
+learner = as_learner(graph, store_backends = TRUE)
+
+set.seed(2026)
+
+resampling = rsmp("holdout", ratio = 0.8)
+
+rr = resample(task, learner, resampling, store_models = TRUE) # True så den kan hived ud efterfølgende
+
+rr$aggregate(msrs(c("regr.mse","regr.rmse","regr.mae")))
+```
+
+Shap-values -- virker ikke.....
+```{r}
+model = rr$learners[[1]]
+
+test_idx = resampling$test_set(task)
+train_idx = resampling$train_set(task)
+
+X_test = task$data(rows = test_idx, cols = task$feature_names)
+y_test = task$data(rows = test_idx, cols = task$target_names)[[1]]
+
+ModelWrapper = R6::R6Class(
+  "ModelWrapper",
+  public = list(
+    model = NULL,
+    initialize = function(model) self$model <- model
+  )
+)
+
+predict.ModelWrapper = function(object, newdata, ...) {
+  object$model$predict_newdata(newdata)$response
+}
+
+wrapped = ModelWrapper$new(model)
+
+predictor = Predictor$new(
+  model = wrapped,
+  data  = X_test,
+  y     = y_test
+)
+
+shap = Shapley$new(predictor, x.interest = X_test[1, ])
+plot(shap)
+
+```
+
+
+SHAP values -- virker ikke.....: 
+```{r}
+library(iml)
+library(data.table)
+
+# 1. Extract the trained model (GraphLearner)
+model = rr$learners[[1]]
+
+# 2. Extract the backend data that the model was trained on
+task_backend = model$model$regr.ranger$train_task
+
+X = as.data.table(task_backend$data(cols = task_backend$feature_names))
+y = task_backend$truth()
+
+# 3. Wrap the mlr3 model so iml can call predict()
+ModelWrapper = R6::R6Class(
+  "ModelWrapper",
+  public = list(
+    model = NULL,
+    initialize = function(model) self$model <- model
+  )
+)
+
+predict.ModelWrapper = function(object, newdata, ...) {
+  object$model$predict_newdata(newdata)$response
+}
+
+wrapped_model = ModelWrapper$new(model)
+
+# 4. Build the iml Predictor
+predictor = Predictor$new(
+  model = wrapped_model,
+  data  = X,
+  y     = y
+)
+
+# 5. Compute SHAP values for one observation
+shap = Shapley$new(predictor, x.interest = X[1, ])
+plot(shap)
+```
+
+
+```{r}
+shap_model = rr$learners[[1]]
+
+# library(data.table)
+# X = as.data.table(task$data(cols = task$feature_names))
+# y = task$data(cols = task$target_names)[[1]]
+# X = rr$learners[[1]]$model$regr.ranger$train_task$data()
+# y = rr$learners[[1]]$model$regr.ranger$train_task$truth()
+# X = task$data(cols = task$feature_names)
+# y = task$data(cols = task$target_names)[[1]]
+
+# Apply preprocessing to the full dataset
+# transformed = model$predict(task)$data
+
+# X = transformed[, setdiff(names(transformed), "response"), with = FALSE]
+# y = transformed$response
+
+shap_graph = shap_model$graph
+
+preproc_graph = shap_graph$clone()
+preproc_graph$remove_pipeop("regr.ranger")
+
+preproc_task = preproc$train(task)[[1]]
+X = preproc_task$data()
+y = task$truth()
+
+# library(iml)
+predictor = Predictor$new(
+  shap_model,
+  data = X,
+  y = y
+)
+
+x_new = X[1, ]
+shap = Shapley$new(predictor, x.interest = x_new)
+plot(shap)
+
+shap_global = FeatureImp$new(predictor, loss = "mse")
+plot(shap_global)
+```
+
+
+
+
+Den her autotuner under tager meget lang tid at køre (ca. 30 min for en forrest)
+```{r}
+task = as_task_regr(freMPL, target = "ClaimAmount") # Regression task 
+
+my_ranger_learner = lrn("regr.ranger",
+                        mtry.ratio = to_tune(0.1, 1),
+                        min.node.size = to_tune(p_int(1, 50)))
+
+graph =
+  po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+  po("datefeatures") %>>%   # converts Date → numeric features
+  po("encode", method = "treatment") %>>%
+  my_ranger_learner
+
+graph_learner_ranger = as_learner(graph)
+
+at_ranger = auto_tuner(
+  tuner = tnr("random_search", batch_size = 20),
+  learner = graph_learner_ranger,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 50)
+)
+
+set.seed(2026)
+
+outer = rsmp("holdout", ratio = 0.8)
+
+rr = resample(task, at_ranger, outer, store_models = TRUE)
+
+rr$aggregate(msrs(c("regr.rmse")))
+```
 
