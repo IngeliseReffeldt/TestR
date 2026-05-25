@@ -893,15 +893,20 @@ task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
 ```
 
 # GENNEMSNITSKUNDE
+
+Note til mig selv, rettet 25-0502026 16.00
 Bemærk, lige nu bygger denne på en række fra nedenstående data, hvor date-værdierne ikke kan være med (derfor "Charlie")
+Det er fordi, det åbenbart er vigtigt for modellen, hvilken rækkefølge tallene kommer i
+
+
 ```{r}
-#gns_kunde <- MPL_data_lump[1,]
-gns_kunde <- Charlie
+gns_kunde <- MPL_data_lump[1,]
+#gns_kunde <- Charlie
 
 gns_kunde$Exposure <- 1  
 gns_kunde$LicAge <- as.numeric(as.integer(mean(MPL_data_lump$LicAge)))
-#gns_kunde$RecordBeg <- as.Date("2004-01-01")
-#gns_kunde$RecordEnd <- as.Date("2005-01-01")
+gns_kunde$RecordBeg <- as.Date("2004-01-01")
+gns_kunde$RecordEnd <- as.Date("2005-01-01")
 gns_kunde$VehAge <- factor(names(sort(table(MPL_data_lump$VehAge), decreasing = TRUE))[1],
                            levels = levels(MPL_data_lump$VehAge))
 gns_kunde$Gender <- factor(names(sort(table(MPL_data_lump$Gender), decreasing = TRUE))[1],
@@ -927,7 +932,7 @@ gns_kunde$VehMaxSpeed <- factor(names(sort(table(MPL_data_lump$VehMaxSpeed), dec
                                 levels = levels(MPL_data_lump$VehMaxSpeed))
 gns_kunde$VehClass <- factor(names(sort(table(MPL_data_lump$VehClass), decreasing = TRUE))[1],
                              levels = levels(MPL_data_lump$VehClass))
-#gns_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
+gns_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
 gns_kunde$RiskVar <- as.numeric(as.integer(mean(MPL_data_lump$RiskVar)))
 gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = TRUE))[1],
                            levels = levels(MPL_data_lump$Garage))
@@ -1012,7 +1017,7 @@ text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
 
 
 ```{r}
-importance = FeatureImp$new(predictor, loss = "rmse", n.repetitions = 100)
+importance = FeatureImp$new(predictor, loss = "rmse", n.repetitions = 1) #bemrk kun 1 
 importance$plot()
 ```
 
@@ -1035,6 +1040,14 @@ Shapley$new(predictor, x.interest = as.data.frame(gns_kunde),
   sample.size = 1000)
 ```
 
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+
+Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
 
 ```{r}
 shapley
@@ -1045,12 +1058,135 @@ shapley
 MPL_data_lump[127,]
 ```
 
+# Forsøg shapley med hele data
+
+Jeg kan ikke få Shapley values til at virke, når vi har dato-variable i data uanset hvordan man gør med den i en pipeline. Derfor tænker jeg om vi kan gøre den numeriske?
+
+```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+    po("datefeatures") %>>%
+    po("encode", method = "treatment",
+       affect_columns = categorical_selector, id = "binary_enc") %>>%
+    learner
+  )
+}
+```
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_tree = make_encoded_learner(lrn("regr.rpart"))
+lrn_tree$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_tree = Predictor$new(
+  model = lrn_tree,
+  data = credit_x,
+  y = credit_y
+)
+
+plot(lrn_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
+```
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_tree, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_tree, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
+## Shapley på Random forrest
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_rf = make_encoded_learner(lrn("regr.ranger"))
+lrn_rf$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor = Predictor$new(
+  model = lrn_rf,
+  data = credit_x,
+  y = credit_y
+)
+```
+
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
 
 
+## Shapley på GAM
 
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
 
+task = as_task_regr(mit_data, target = "ClaimAmount")
 
+lrn_gam = make_encoded_learner(lrn("regr.gam"))
+lrn_gam$train(task, row_ids = split$train)
 
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_gam = Predictor$new(
+  model = lrn_gam,
+  data = credit_x,
+  y = credit_y
+)
+```
+
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_gam, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_gam, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
 
 
 
