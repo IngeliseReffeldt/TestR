@@ -127,6 +127,666 @@ gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = 
 # Generisk kunde 2: 
 Ekstrem kunde
 
+#### BASELINE MODEL FOR COMPARISON ######
+
+```{r}
+baseline <- lrn("regr.featureless")
+```
+
+```{r}
+baseline$train(task_knn, row_ids = split_knn$train)
+```
+
+```{r}
+pred_baseline <- baseline$predict(task_knn, row_ids = split_knn$test)
+```
+
+```{r}
+pred_baseline$score(msr("regr.rmse"))
+pred_baseline$score(msr("regr.mae"))
+pred_baseline$score(msr("regr.rsq"))
+```
+
+##### DEFINING KNN MODEL #####
+
+```{r}
+task_knn <- TaskRegr$new(
+  id = "claims",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+graph_knn <- 
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  lrn("regr.kknn")
+```
+
+```{r}
+learner_knn <- as_learner(graph_knn)
+```
+
+```{r}
+set.seed(2026)
+
+split_knn <- partition(task_knn, ratio = 0.8)
+
+train_set_knn <- split_knn$train
+test_set_knn  <- split_knn$test
+```
+
+```{r}
+learner_knn$train(task_knn, row_ids = train_set_knn)
+```
+
+```{r}
+prediction_knn <- learner_knn$predict(task_knn, row_ids = test_set_knn)
+```
+
+```{r}
+prediction_knn$score(msr("regr.rmse"))
+prediction_knn$score(msr("regr.mae"))
+prediction_knn$score(msr("regr.rsq"))
+```
+
+#### KNN TUNING ####
+
+```{r}
+learner_knn <- lrn(
+  "regr.kknn",
+  k = to_tune(1, 50)
+)
+```
+
+```{r}
+graph_knn <- 
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  learner_knn
+
+graph_learner_knn <- as_learner(graph_knn)
+```
+
+```{r}
+at_knn <- auto_tuner(
+  tuner = tnr("random_search"),
+  learner = graph_learner_knn,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 20)
+)
+```
+
+```{r}
+at_knn$train(task_knn, row_ids = train_set_knn)
+```
+
+```{r}
+at_knn$tuning_result
+```
+
+```{r}
+pred_knn <- at_knn$predict(task_knn, row_ids = test_set_knn)
+
+pred_knn$score(msr("regr.rmse"))
+pred_knn$score(msr("regr.mae"))
+pred_knn$score(msr("regr.rsq"))
+```
+
+##### DEFAULT RF MODEL #####
+
+```{r}
+task_rf <- TaskRegr$new(
+  id = "claim_rf",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task_rf, ratio = 0.8)
+
+train_set <- split$train
+test_set  <- split$test
+```
+
+```{r}
+learner_rf <- lrn(
+  "regr.ranger",             #ranger implements Random Forest
+  importance = "impurity",
+  predict_type = "response"
+)
+```
+
+```{r}
+set.seed(2026)
+
+learner_rf$train(task_rf, row_ids = train_set)
+```
+
+```{r}
+pred_rf <- learner_rf$predict(task_rf, row_ids = test_set)
+
+pred_rf$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TARGET ENCODING ######
+
+```{r}
+target_encoder <- po(
+  "encodeimpact",
+  affect_columns = selector_type(c("factor", "character"))
+)
+```
+
+```{r}
+learner_rf <- lrn(
+  "regr.ranger",
+  importance = "impurity",
+  predict_type = "response"
+)
+```
+
+```{r}
+graph_rf_te <- target_encoder %>>% learner_rf
+
+graph_learner_rf_te <- as_learner(graph_rf_te)
+```
+
+```{r}
+set.seed(2026)
+
+graph_learner_rf_te$train(
+  task_rf,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_rf_te <- graph_learner_rf_te$predict(
+  task_rf,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_rf_te$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+The default Random Forest model performed better overall than the target encoded version. Although target encoding slightly improved the MAE, it led to a higher RMSE and a lower RSQ, suggesting that the model explained less of the variation in the data. Since Random Forest can already handle categorical variables quite well, target encoding did not provide any clear improvement in this case. Therefore, the default Random Forest model is chosen for further tuning.
+
+##### TUNING ######
+
+```{r}
+search_space <- ps(
+  mtry = p_int(lower = 2, upper = 12),
+  min.node.size = p_int(lower = 1, upper = 20),
+  sample.fraction = p_dbl(lower = 0.5, upper = 1),
+  num.trees = p_int(lower = 500, upper = 1500)
+)
+```
+
+```{r}
+at_rf <- auto_tuner(
+  tuner = tnr("random_search"),
+  learner = learner_rf,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  search_space = search_space,
+  terminator = trm("evals", n_evals = 25)
+)
+```
+
+```{r}
+set.seed(2026)
+
+at_rf$train(task_rf, row_ids = train_set)
+```
+
+```{r}
+at_rf$tuning_result
+```
+
+```{r}
+pred_tuned <- at_rf$predict(task_rf, row_ids = test_set)
+
+pred_tuned$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+### RESULTS RF ###
+
+```{r}
+results_rf <- data.frame(
+  Model = c("Baseline", "RF Default", "RF Target Encoded", "RF Tuned"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_rf$score(msr("regr.rmse")), pred_rf_te$score(msr("regr.rmse")), pred_tuned$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_rf$score(msr("regr.mae")), pred_rf_te$score(msr("regr.mae")), pred_tuned$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_rf$score(msr("regr.rsq")), pred_rf_te$score(msr("regr.rsq")), pred_tuned$score(msr("regr.rsq")))
+)
+results_rf
+```
+
+##### DEFAULT XGBoost MODEL #####
+
+```{r}
+task_xgb <- TaskRegr$new(
+  id = "claim_amount",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task_xgb, ratio = 0.8)
+
+train_set <- split$train
+test_set  <- split$test
+```
+
+```{r}
+learner_xgb_default <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn(
+      "regr.xgboost",
+      objective = "reg:squarederror",
+      eval_metric = "rmse"
+    )
+)
+```
+
+```{r}
+learner_xgb_default$train(
+  task_xgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_xgb_default <- learner_xgb_default$predict(
+  task_xgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_xgb_default$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TARGET ENCODING #####
+
+```{r}
+learner_xgb_te <- as_learner(
+  po("encodeimpact") %>>% #encodeimpact performs target encoding
+    lrn(
+      "regr.xgboost",
+      objective = "reg:squarederror",
+      eval_metric = "rmse"
+    )
+)
+```
+
+```{r}
+learner_xgb_te$train(
+  task_xgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_xgb_te <- learner_xgb_te$predict(
+  task_xgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_xgb_te$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+The performance of the two models with the different encoding methods was very similar. However, the one-hot encoding lead to a slightly better model performance and therefore, we proceed with tuning that models hyperparameters.
+
+##### TUNING #####
+
+```{r}
+learner_xgb_tuned <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn(
+      "regr.xgboost",
+      objective = "reg:squarederror",
+      eval_metric = "rmse"
+    )
+)
+```
+
+```{r}
+search_space <- ps(
+  regr.xgboost.eta = p_dbl(0.01, 0.3),
+  regr.xgboost.max_depth = p_int(3, 10),
+  regr.xgboost.subsample = p_dbl(0.5, 1),
+  regr.xgboost.colsample_bytree = p_dbl(0.5, 1),
+  regr.xgboost.min_child_weight = p_int(1, 10),
+  regr.xgboost.nrounds = p_int(100, 1000)
+)
+```
+
+```{r}
+tuner <- tnr("random_search")
+```
+
+```{r}
+instance <- TuningInstanceBatchSingleCrit$new(
+  task = task_xgb,
+  learner = learner_xgb_tuned,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  search_space = search_space,
+  terminator = trm("evals", n_evals = 50)
+)
+```
+
+```{r}
+plan(multisession)
+tuner$optimize(instance)
+```
 
 
+```{r}
+learner_xgb_tuned$param_set$values <- instance$result_learner_param_vals
+```
 
+```{r}
+learner_xgb_tuned$train(task_xgb, row_ids = train_set)
+```
+
+```{r}
+pred_xgb_tuned <- learner_xgb_tuned$predict(task_xgb, row_ids = test_set)
+
+pred_xgb_tuned$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+###### RESULTS XGBoost ######
+
+```{r}
+results_xgb <- data.frame(
+  Model = c("Baseline", "XGB Default", "XGB Target Encoded", "XGB Tuned"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_xgb_default$score(msr("regr.rmse")), pred_xgb_te$score(msr("regr.rmse")), pred_xgb_tuned$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_xgb_default$score(msr("regr.mae")), pred_xgb_te$score(msr("regr.mae")), pred_xgb_tuned$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_xgb_default$score(msr("regr.rsq")), pred_xgb_te$score(msr("regr.rsq")), pred_xgb_tuned$score(msr("regr.rsq")))
+)
+results_xgb
+```
+
+##### DEFAULT LIGHTGBM MODEL #####
+
+```{r}
+task_lgb <- TaskRegr$new(
+  id = "claim_amount",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task_lgb, ratio = 0.8)
+
+train_set <- split$train
+test_set  <- split$test
+```
+
+```{r}
+learner_lgb_default <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn("regr.lightgbm",
+        objective = "regression",
+        verbose = -1
+    )
+)
+```
+
+```{r}
+learner_lgb_default$train(
+  task_lgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_lgb_default <- learner_lgb_default$predict(
+  task_lgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_lgb_default$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TARGET ENCODING ####
+
+```{r}
+learner_lgb_te <- as_learner(
+  po("encodeimpact") %>>%
+    lrn(
+      "regr.lightgbm",
+      objective = "regression",
+      verbose = -1
+    )
+)
+```
+
+```{r}
+learner_lgb_te$train(
+  task_lgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_lgb_te <- learner_lgb_te$predict(
+  task_lgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_lgb_te$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+Once again, the target encoding does not improve performance, so we proceed with tuning the hyperparameters of the default model.
+
+##### TUNING ####
+
+```{r}
+learner_lgb_tuned <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn("regr.lightgbm",
+        objective = "regression",
+        verbose = -1
+    )
+)
+```
+
+```{r}
+search_space <- ps(
+  regr.lightgbm.learning_rate =
+    p_dbl(0.01, 0.1),
+  regr.lightgbm.num_leaves =
+    p_int(20, 80),
+  regr.lightgbm.max_depth =
+    p_int(3, 8),
+  regr.lightgbm.feature_fraction =
+    p_dbl(0.7, 1),
+  regr.lightgbm.bagging_fraction =
+    p_dbl(0.7, 1),
+  regr.lightgbm.min_data_in_leaf =
+    p_int(20, 80),
+  regr.lightgbm.num_iterations =
+    p_int(100, 500)
+)
+```
+
+```{r}
+tuner <- tnr("random_search")
+```
+
+```{r}
+instance <- TuningInstanceBatchSingleCrit$new(
+  task = task_lgb,
+  learner = learner_lgb_tuned,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  search_space = search_space,
+  terminator = trm("evals", n_evals = 50)
+)
+```
+
+```{r}
+plan(multisession)
+tuner$optimize(instance)
+```
+
+
+```{r}
+learner_lgb_tuned$param_set$values <- instance$result_learner_param_vals
+```
+
+```{r}
+learner_lgb_tuned$train(task_lgb, row_ids = train_set)
+```
+
+```{r}
+pred_lgb_tuned <- learner_lgb_tuned$predict(task_lgb, row_ids = test_set)
+
+pred_lgb_tuned$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+###### RESULTS LGBM ######
+
+```{r}
+results_lgb <- data.frame(
+  Model = c("Baseline", "LGBM Default", "LGBM Target Encoded", "LGBM Tuned"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_lgb_default$score(msr("regr.rmse")), pred_lgb_te$score(msr("regr.rmse")), pred_lgb_tuned$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_lgb_default$score(msr("regr.mae")), pred_lgb_te$score(msr("regr.mae")), pred_lgb_tuned$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_lgb_default$score(msr("regr.rsq")), pred_lgb_te$score(msr("regr.rsq")), pred_lgb_tuned$score(msr("regr.rsq")))
+)
+results_lgb
+```
+
+##### DEFAULT NEURAL NETWORK MODEL #####
+
+```{r}
+task_nn <- TaskRegr$new(
+  id = "claim_amount",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task_nn, ratio = 0.8)
+
+train_set <- split$train
+test_set  <- split$test
+```
+
+```{r}
+# MLP (Multi layer perceptron): Adam optimizer. SGD on mini batches (batch size = 32). See mlr_learners$get("regr.mlp")
+graph_nn =
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  lrn(
+    "regr.mlp",
+    epochs = 100,
+    batch_size = 32,
+    patience = 10, # Stopping process after 10 epochs without any improvement on validation set.
+    measures_valid = msr("regr.rmse")
+  )
+```
+
+```{r}
+learner_nn = as_learner(graph_nn)
+```
+
+```{r}
+set_validate(learner_nn, validate = 0.2) 
+# Splitting the training data into new training and validation sets. This is used for early stopping.
+```
+
+```{r}
+learner_nn$train(
+  task_nn,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_nn = learner_nn$predict(
+  task_nn,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_nn$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+###### RESULTS NN ######
+
+```{r}
+results_nn <- data.frame(
+  Model = c("Baseline", "NN Default"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_nn$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_nn$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_nn$score(msr("regr.rsq")))
+)
+results_nn
+```
