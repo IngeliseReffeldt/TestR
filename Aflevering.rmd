@@ -41,6 +41,12 @@ We replace null-values from RecordEnd, so we don't have to deal with null values
 MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
+We replace all date-values with numeric values, because many models cannot handle date-values.
+```{r}
+MPL_data$RecordBeg <- as.numeric(MPL_data$RecordBeg)
+MPL_data$RecordEnd <- as.numeric(MPL_data$RecordEnd)
+```
+
 Ordered factors and factors.
 ```{r}
 # VehAge is an ordered variable
