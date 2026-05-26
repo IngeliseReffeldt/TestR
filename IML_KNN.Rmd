@@ -11,6 +11,8 @@ library(mlr3learners)
 library(mlr3tuning)
 library(mlr3mbo)
 library(mlr3pipelines)
+library(mlr3torch)
+library(torch)
 library(paradox)
 library(future)
 library(tidyverse)
@@ -19,6 +21,7 @@ library(mlr3extralearners)
 library(OpenML)
 library(mgcv)
 library(kknn)
+library(lightgbm)
 ```
 
 ###### DATA HANDLING ######
@@ -39,6 +42,7 @@ hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
 
 ```{r}
 MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd <- as.Date(MPL_data$RecordEnd)
 MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
@@ -61,7 +65,7 @@ unique(MPL_data_lump$SocioCateg)
 
 ### convert categorical variables to factors
 ```{r}
-categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+categorical_vars <- c("RecordEnd", "VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
 MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
 ```
 
