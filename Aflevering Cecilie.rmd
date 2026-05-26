@@ -20,7 +20,8 @@ library(readr)
 library(tidyverse)
 library(mlr3viz)
 library(future)
-
+library(mlr3verse)
+library(iml)
 library(rpart.plot) # Visualisering af decision trees
 ```
 
@@ -810,4 +811,428 @@ rr = resample(task, at_ranger, outer, store_models = TRUE)
 
 rr$aggregate(msrs(c("regr.rmse")))
 ```
+
+
+# Opload til fællesafleveringen 
+
+## Pre-processing
+
+We remove ClaimInd from the dataset, since we want to predict a price for a given customer, and we don't know, if the customer will have a claim.
+Remove ...1 since it is just row_numbers.
+```{r}
+MPL_data <- subset(freMPL, select = -c(ClaimInd,...1))
+```
+
+We replace null-values from RecordEnd, so we don't have to deal with null values.
+```{r}
+MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
+```
+
+Ordered factors and factors.
+```{r}
+# VehAge is an ordered variable
+freMPL$VehAge <- factor(freMPL$VehAge, levels = c("0", "1", "2", "3", "4", "5", "6-7", "8-9", "10+"))
+
+# VehMaxSpeed is an ordered variable
+freMPL$VehMaxSpeed <- factor(freMPL$VehMaxSpeed,
+                             levels = c("1-130 km/h", "130-140 km/h", "140-150 km/h",
+                                        "150-160 km/h", "160-170 km/h", "170-180 km/h", 
+                                        "180-190 km/h", "190-200 km/h", "200-220 km/h",
+                                        "220+ km/h"))
+
+# HasKmLimit
+freMPL$HasKmLimit <- factor(freMPL$HasKmLimit)
+```
+
+Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data. 
+```{r}
+MPL_data_lump <- MPL_data
+
+factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
+  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
+  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
+}
+
+categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+
+MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
+```
+
+Final data: 
+```{r}
+summary(MPL_data_lump)
+```
+
+## Dubletter af data - skal vi gøre noget ved det? - Vi har kun 43288/145780 unikke rækker 
+```{r}
+MPL_data_lump[duplicated(MPL_data_lump), ]
+```
+
+```{r}
+nrow(MPL_data_lump)
+nrow(MPL_data_lump[duplicated(MPL_data_lump), ])
+nrow(unique(MPL_data_lump))
+nrow(MPL_data_lump[!duplicated(MPL_data_lump), ])
+```
+
+```{r}
+x <- data.frame(a = c(1,1,1,2,2,3),
+                b = c(1,1,2,3,3,3))
+duplicated(x)
+nrow(x[duplicated(x),])
+nrow(unique(x))
+```
+
+
+## Task
+```{r}
+task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
+```
+
+# GENNEMSNITSKUNDE
+
+Note til mig selv, rettet 25-0502026 16.00
+Bemærk, lige nu bygger denne på en række fra nedenstående data, hvor date-værdierne ikke kan være med (derfor "Charlie")
+Det er fordi, det åbenbart er vigtigt for modellen, hvilken rækkefølge tallene kommer i
+
+
+```{r}
+gns_kunde <- MPL_data_lump[1,]
+#gns_kunde <- Charlie
+
+gns_kunde$Exposure <- 1  
+gns_kunde$LicAge <- as.numeric(as.integer(mean(MPL_data_lump$LicAge)))
+gns_kunde$RecordBeg <- as.Date("2004-01-01")
+gns_kunde$RecordEnd <- as.Date("2005-01-01")
+gns_kunde$VehAge <- factor(names(sort(table(MPL_data_lump$VehAge), decreasing = TRUE))[1],
+                           levels = levels(MPL_data_lump$VehAge))
+gns_kunde$Gender <- factor(names(sort(table(MPL_data_lump$Gender), decreasing = TRUE))[1],
+                           levels = levels(MPL_data_lump$Gender))
+gns_kunde$MariStat <- factor(names(sort(table(MPL_data_lump$MariStat), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$MariStat))
+gns_kunde$SocioCateg <- factor(names(sort(table(MPL_data_lump$SocioCateg), decreasing = TRUE))[1],
+                               levels = levels(MPL_data_lump$SocioCateg))
+gns_kunde$VehUsage <- factor(names(sort(table(MPL_data_lump$VehUsage), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$VehUsage))
+gns_kunde$DrivAge <- as.numeric(as.integer(mean(MPL_data_lump$DrivAge)))
+gns_kunde$HasKmLimit <- as.numeric(names(sort(table(MPL_data_lump$HasKmLimit), decreasing = TRUE))[1])
+gns_kunde$BonusMalus <- as.numeric(as.integer(mean(MPL_data_lump$BonusMalus)))
+gns_kunde$VehBody <- factor(names(sort(table(MPL_data_lump$VehBody), decreasing = TRUE))[1],
+                            levels = levels(MPL_data_lump$VehBody))
+gns_kunde$VehPrice <- factor(names(sort(table(MPL_data_lump$VehPrice), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$VehPrice))
+gns_kunde$VehEngine <- factor(names(sort(table(MPL_data_lump$VehEngine), decreasing = TRUE))[1],
+                              levels = levels(MPL_data_lump$VehEngine))
+gns_kunde$VehEnergy <- factor(names(sort(table(MPL_data_lump$VehEnergy), decreasing = TRUE))[1],
+                              levels = levels(MPL_data_lump$VehEnergy))
+gns_kunde$VehMaxSpeed <- factor(names(sort(table(MPL_data_lump$VehMaxSpeed), decreasing = TRUE))[1],
+                                levels = levels(MPL_data_lump$VehMaxSpeed))
+gns_kunde$VehClass <- factor(names(sort(table(MPL_data_lump$VehClass), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$VehClass))
+gns_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
+gns_kunde$RiskVar <- as.numeric(as.integer(mean(MPL_data_lump$RiskVar)))
+gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = TRUE))[1],
+                           levels = levels(MPL_data_lump$Garage))
+str(gns_kunde)
+```
+
+
+
+
+# Baseline model 
+
+```{r}
+set.seed(2026)
+splits = partition(task, ratio = 0.8)
+
+task_train = task$clone()$filter(splits$train)
+task_test = task$clone()$filter(splits$test)
+```
+
+```{r}
+baseline <- lrn("regr.featureless")$train(task_train)
+baseline$predict(task_test)$score(msrs(c("regr.rmse"))) # ,"time_both" for time
+```
+# Decision tree
+
+Helper function for encoding - dummy encode categorical features
+```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+    po("datefeatures") %>>%
+    po("encode", method = "treatment",
+       affect_columns = categorical_selector, id = "binary_enc") %>>%
+    learner
+  )
+}
+```
+
+Define learner - full tree
+```{r}
+my_cart_learner = lrn("regr.rpart", cp = 0.01)
+
+full_tree = make_encoded_learner(my_cart_learner)
+full_tree$train(task_train)
+
+cart_trained <- full_tree$model$regr.rpart$model
+plot(cart_trained, compress = TRUE, margin = 0.1)
+text(cart_trained, use.n = TRUE, cex = 0.6) # Adjust cex (font size) as needed
+```
+
+# Feature importance (Ch 12 i mlr3 bog)
+
+```{r}
+mindre_data = MPL_data_lump[, !(names(MPL_data_lump) %in% date_cols_names)]
+task = as_task_regr(mindre_data, target = "ClaimAmount")
+
+set.seed(2026)
+split = partition(task, ratio = 0.8)
+lrn_tree = make_encoded_learner(lrn("regr.rpart"))
+lrn_tree$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+#date_cols_names = names(credit_x)[sapply(credit_x, inherits, "Date")]
+#credit_x[, (date_cols_names) := lapply(.SD, as.numeric), .SDcols = date_cols_names]
+
+predictor = Predictor$new(model = lrn_tree, data = credit_x, y = credit_y)
+```
+
+```{r}
+plot(lrn_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
+```
+
+
+
+```{r}
+importance = FeatureImp$new(predictor, loss = "rmse", n.repetitions = 1) #bemrk kun 1 
+importance$plot()
+```
+
+```{r}
+Charlie = task$data(rows = 127L, cols = task$feature_names)
+shapley = Shapley$new(predictor, x.interest = as.data.frame(Charlie),
+  sample.size = 1000)
+shapley$plot()
+```
+
+```{r}
+shapley = Shapley$new(predictor, x.interest = as.data.frame(Charlie),
+  sample.size = 1000)
+shapley$plot()
+```
+```{r}
+Shapley$new(predictor, x.interest = as.data.frame(gns_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor, x.interest = as.data.frame(gns_kunde),
+  sample.size = 1000)
+```
+
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+
+Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
+```{r}
+shapley
+```
+
+
+```{r}
+MPL_data_lump[127,]
+```
+
+# Forsøg shapley med hele data
+
+Jeg kan ikke få Shapley values til at virke, når vi har dato-variable i data uanset hvordan man gør med den i en pipeline. Derfor tænker jeg om vi kan gøre den numeriske?
+
+```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+    po("datefeatures") %>>%
+    po("encode", method = "treatment",
+       affect_columns = categorical_selector, id = "binary_enc") %>>%
+    learner
+  )
+}
+```
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_tree = make_encoded_learner(lrn("regr.rpart"))
+lrn_tree$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_tree = Predictor$new(
+  model = lrn_tree,
+  data = credit_x,
+  y = credit_y
+)
+
+plot(lrn_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
+
+lrn_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_tree, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_tree, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
+## Featureless
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_baseline = make_encoded_learner(lrn("regr.featureless"))
+lrn_baseline$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_baseline = Predictor$new(
+  model = lrn_baseline,
+  data = credit_x,
+  y = credit_y
+)
+
+lrn_baseline$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+Laver den her bare for at være sikker på at der ikke sker noget med baseline - altså for at vise ingen indvirkning af features
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_baseline, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_baseline, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
+
+## Shapley på Random forrest
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_rf = make_encoded_learner(lrn("regr.ranger"))
+lrn_rf$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_rf = Predictor$new(
+  model = lrn_rf,
+  data = credit_x,
+  y = credit_y
+)
+
+lrn_rf$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_rf, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_rf, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
+
+## Shapley på GAM
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_gam = make_encoded_learner(lrn("regr.gam"))
+lrn_gam$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_gam = Predictor$new(
+  model = lrn_gam,
+  data = credit_x,
+  y = credit_y
+)
+
+lrn_gam$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_gam, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_gam, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
+
 
