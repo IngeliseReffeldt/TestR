@@ -102,8 +102,8 @@ gns_kunde <- MPL_data_lump[1,]
 
 gns_kunde$Exposure <- 1  
 gns_kunde$LicAge <- as.numeric(as.integer(mean(MPL_data_lump$LicAge)))
-gns_kunde$RecordBeg <- as.Date("2004-01-01")
-gns_kunde$RecordEnd <- as.Date("2005-01-01")
+gns_kunde$RecordBeg <- as.numeric(as.Date("2004-01-01"))
+gns_kunde$RecordEnd <- as.numeric(as.Date("2005-01-01"))
 gns_kunde$VehAge <- factor(names(sort(table(MPL_data_lump$VehAge), decreasing = TRUE))[1],
                            levels = levels(MPL_data_lump$VehAge))
 gns_kunde$Gender <- factor(names(sort(table(MPL_data_lump$Gender), decreasing = TRUE))[1],
