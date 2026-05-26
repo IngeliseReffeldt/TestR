@@ -113,7 +113,7 @@ prediction_knn$score(msr("regr.mae"))
 prediction_knn$score(msr("regr.rsq"))
 ```
 
-#### TUNING ####
+#### KNN TUNING ####
 
 ```{r}
 learner_knn <- lrn(
