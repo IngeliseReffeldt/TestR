@@ -564,8 +564,8 @@ graph_learner_elastic_net$predict(task_test)$score(msr("regr.rmse"))
 archive_dt = as.data.table(instance$archive)
 ```
 
-
-
+#kunde 
+1 60 - - 0 Male Alone CSP50 Priave + office 30 0 150 sport utility V Direct injection overpowered disel 1900-200 H risk var 20 collective garage
 
 
 
