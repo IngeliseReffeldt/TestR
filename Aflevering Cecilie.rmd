@@ -1101,6 +1101,8 @@ predictor_tree = Predictor$new(
 
 plot(lrn_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
 text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
+
+lrn_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
 ```
 ```{r}
 ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
@@ -1112,6 +1114,46 @@ Shapley$new(predictor_tree, x.interest = as.data.frame(ny_kunde),
 Shapley$new(predictor_tree, x.interest = as.data.frame(ny_kunde),
   sample.size = 1000)
 ```
+
+## Featureless
+
+```{r}
+mit_data <- MPL_data_lump
+mit_data$RecordBeg <- as.numeric(MPL_data_lump$RecordBeg)
+mit_data$RecordEnd <- as.numeric(MPL_data_lump$RecordEnd)
+
+task = as_task_regr(mit_data, target = "ClaimAmount")
+
+lrn_baseline = make_encoded_learner(lrn("regr.featureless"))
+lrn_baseline$train(task, row_ids = split$train)
+
+# features in test data
+credit_x = task$data(rows = split$test,
+  cols = task$feature_names)
+# target in test data
+credit_y = task$data(rows = split$test,
+  cols = task$target_names)[[1]]
+
+predictor_baseline = Predictor$new(
+  model = lrn_baseline,
+  data = credit_x,
+  y = credit_y
+)
+
+lrn_baseline$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+Laver den her bare for at være sikker på at der ikke sker noget med baseline - altså for at vise ingen indvirkning af features
+```{r}
+ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
+ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
+ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
+
+Shapley$new(predictor_baseline, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)$plot()
+Shapley$new(predictor_baseline, x.interest = as.data.frame(ny_kunde),
+  sample.size = 1000)
+```
+
 
 ## Shapley på Random forrest
 
@@ -1132,11 +1174,13 @@ credit_x = task$data(rows = split$test,
 credit_y = task$data(rows = split$test,
   cols = task$target_names)[[1]]
 
-predictor = Predictor$new(
+predictor_rf = Predictor$new(
   model = lrn_rf,
   data = credit_x,
   y = credit_y
 )
+
+lrn_rf$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
 ```
 
 ```{r}
@@ -1144,9 +1188,9 @@ ny_kunde = gns_kunde[, task$feature_names] # Note the order of columns matter
 ny_kunde$RecordBeg <- as.numeric(gns_kunde$RecordBeg)
 ny_kunde$RecordEnd <- as.numeric(gns_kunde$RecordEnd)
 
-Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+Shapley$new(predictor_rf, x.interest = as.data.frame(ny_kunde),
   sample.size = 1000)$plot()
-Shapley$new(predictor, x.interest = as.data.frame(ny_kunde),
+Shapley$new(predictor_rf, x.interest = as.data.frame(ny_kunde),
   sample.size = 1000)
 ```
 
@@ -1175,6 +1219,8 @@ predictor_gam = Predictor$new(
   data = credit_x,
   y = credit_y
 )
+
+lrn_gam$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
 ```
 
 ```{r}
