@@ -1234,5 +1234,27 @@ Shapley$new(predictor_gam, x.interest = as.data.frame(ny_kunde),
   sample.size = 1000)
 ```
 
+# Forsøg på beeswarm plot 
+På tree
 
+```{r}
+library(fastshap)
+library(shapviz)
+
+# Compute SHAP values
+shap_values <- fastshap::explain(
+  predictor_tree$model,
+  X = task$data(rows = split$test)[1:10,],
+  pred_wrapper = function(object, newdata) {
+    predict(object, newdata = newdata)
+  },
+  nsim = 10
+)
+
+# Create shapviz object
+sv <- shapviz(shap_values, X = task$data(rows = split$test)[1:10,])
+
+# Beeswarm plot
+sv_importance(sv, kind = "beeswarm")
+```
 

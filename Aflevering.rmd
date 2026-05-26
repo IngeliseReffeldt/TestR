@@ -20,6 +20,16 @@ library(paradox)
 library(readr)
 library(tidyverse)
 library(mlr3viz)
+library(mlr3torch)
+library(torch)
+library(future)
+library(forcats)
+library(mlr3extralearners)
+library(OpenML)
+library(mgcv)
+library(kknn)
+library(lightgbm)
+library(Metrics)
 ```
 
 # Load data
@@ -92,8 +102,8 @@ gns_kunde <- MPL_data_lump[1,]
 
 gns_kunde$Exposure <- 1  
 gns_kunde$LicAge <- as.numeric(as.integer(mean(MPL_data_lump$LicAge)))
-gns_kunde$RecordBeg <- as.Date("2004-01-01")
-gns_kunde$RecordEnd <- as.Date("2005-01-01")
+gns_kunde$RecordBeg <- as.numeric(as.Date("2004-01-01"))
+gns_kunde$RecordEnd <- as.numeric(as.Date("2005-01-01"))
 gns_kunde$VehAge <- factor(names(sort(table(MPL_data_lump$VehAge), decreasing = TRUE))[1],
                            levels = levels(MPL_data_lump$VehAge))
 gns_kunde$Gender <- factor(names(sort(table(MPL_data_lump$Gender), decreasing = TRUE))[1],
@@ -172,6 +182,75 @@ pred_baseline$score(msr("regr.rmse"))
 pred_baseline$score(msr("regr.mae"))
 pred_baseline$score(msr("regr.rsq"))
 ```
+
+##### Tree
+
+```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+      po("datefeatures") %>>%
+      po("encode", method = "treatment",
+         affect_columns = categorical_selector, id = "binary_enc") %>>%
+      learner
+  )
+}
+```
+
+Defult tree
+```{r}
+lrn_tree = make_encoded_learner(lrn("regr.rpart"))
+lrn_tree$train(task, row_ids = split$train)
+
+plot(lrn_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
+
+lrn_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+
+Define learner - full tree
+```{r}
+full_tree = make_encoded_learner(lrn("regr.rpart", cp = 0))
+full_tree$train(task, row_ids = split$train)
+
+plot(full_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(full_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.2)
+
+full_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+
+Optimal cp
+```{r}
+graph_learner_cart_cv = make_encoded_learner(lrn("regr.rpart", cp = 0, xval = 5))
+graph_learner_cart_cv$train(task, row_ids = split$train)
+
+cart_trained_cv <- graph_learner_cart_cv$model$regr.rpart$model
+
+rpart::plotcp(cart_trained_cv)
+rpart::printcp(cart_trained_cv)
+
+cp_table = cart_trained_cv$cptable
+min_row = which.min(cp_table[, "xerror"])
+one_se_threshold = cp_table[min_row, "xerror"] + cp_table[min_row, "xstd"]
+
+selected_row = which(cp_table[, "xerror"] <= one_se_threshold)[1]
+selected_cp = cp_table[selected_row, "CP"]
+selected_cp
+```
+
+```{r}
+selected_cp
+pruned_tree = make_encoded_learner(lrn("regr.rpart", cp = 0.02459138))
+pruned_tree$train(task, row_ids = split$train)
+
+plot(pruned_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(pruned_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.5)
+
+pruned_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+```
+
 
 ##### DEFINING KNN MODEL #####
 
