@@ -11,6 +11,8 @@ library(mlr3learners)
 library(mlr3tuning)
 library(mlr3mbo)
 library(mlr3pipelines)
+library(mlr3torch)
+library(torch)
 library(paradox)
 library(future)
 library(tidyverse)
@@ -19,6 +21,7 @@ library(mlr3extralearners)
 library(OpenML)
 library(mgcv)
 library(kknn)
+library(lightgbm)
 ```
 
 ###### DATA HANDLING ######
@@ -39,6 +42,7 @@ hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
 
 ```{r}
 MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd <- as.Date(MPL_data$RecordEnd)
 MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
@@ -61,11 +65,11 @@ unique(MPL_data_lump$SocioCateg)
 
 ### convert categorical variables to factors
 ```{r}
-categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+categorical_vars <- c("RecordEnd", "VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
 MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
 ```
 
-##### DEFINING RF MODEL #####
+##### DEFAULT RF MODEL #####
 
 ```{r}
 task_rf <- TaskRegr$new(
@@ -86,6 +90,39 @@ test_set  <- split$test
 
 ```{r}
 learner_rf <- lrn(
+  "regr.ranger",             #ranger implements Random Forest
+  importance = "impurity",
+  predict_type = "response"
+)
+```
+
+```{r}
+set.seed(2026)
+
+learner_rf$train(task_rf, row_ids = train_set)
+```
+
+```{r}
+pred_rf <- learner_rf$predict(task_rf, row_ids = test_set)
+
+pred_rf$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TARGET ENCODING ######
+
+```{r}
+target_encoder <- po(
+  "encodeimpact",
+  affect_columns = selector_type(c("factor", "character"))
+)
+```
+
+```{r}
+learner_rf <- lrn(
   "regr.ranger",
   importance = "impurity",
   predict_type = "response"
@@ -93,37 +130,63 @@ learner_rf <- lrn(
 ```
 
 ```{r}
-search_space <- ps(
-  mtry = p_int(lower = 3, upper = 10),
-  min.node.size = p_int(lower = 1, upper = 20),
-  sample.fraction = p_dbl(lower = 0.5, upper = 1),
-  num.trees = p_int(lower = 200, upper = 700)
+graph_rf_te <- target_encoder %>>% learner_rf
+
+graph_learner_rf_te <- as_learner(graph_rf_te)
+```
+
+```{r}
+set.seed(2026)
+
+graph_learner_rf_te$train(
+  task_rf,
+  row_ids = train_set
 )
 ```
 
 ```{r}
-resampling <- rsmp("cv", folds = 5)
+pred_rf_te <- graph_learner_rf_te$predict(
+  task_rf,
+  row_ids = test_set
+)
 ```
 
 ```{r}
-tuner <- tnr("random_search")
+pred_rf_te$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+The default Random Forest model performed better overall than the target encoded version. Although target encoding slightly improved the MAE, it led to a higher RMSE and a lower RSQ, suggesting that the model explained less of the variation in the data. Since Random Forest can already handle categorical variables quite well, target encoding did not provide any clear improvement in this case. Therefore, the default Random Forest model is chosen for further tuning.
+
+##### TUNING ######
+
+```{r}
+search_space <- ps(
+  mtry = p_int(lower = 2, upper = 12),
+  min.node.size = p_int(lower = 1, upper = 20),
+  sample.fraction = p_dbl(lower = 0.5, upper = 1),
+  num.trees = p_int(lower = 500, upper = 1500)
+)
 ```
 
 ```{r}
 at_rf <- auto_tuner(
-  tuner = tuner,
+  tuner = tnr("random_search"),
   learner = learner_rf,
-  resampling = resampling,
+  resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
   search_space = search_space,
-  terminator = trm("evals", n_evals = 10)
+  terminator = trm("evals", n_evals = 25)
 )
 ```
 
 ```{r}
 set.seed(2026)
 
-at_rf$train(task_rf)
+at_rf$train(task_rf, row_ids = train_set)
 ```
 
 ```{r}
@@ -131,9 +194,9 @@ at_rf$tuning_result
 ```
 
 ```{r}
-pred <- at_rf$predict(task_rf)
+pred_tuned <- at_rf$predict(task_rf, row_ids = test_set)
 
-pred$score(list(
+pred_tuned$score(list(
   msr("regr.rmse"),
   msr("regr.mae"),
   msr("regr.rsq")
@@ -164,10 +227,19 @@ pred_baseline$score(list(
 ```
 
 
+###### RESULTS ######
 
+```{r}
+results_rf <- data.frame(
+  Model = c("Baseline", "RF Default", "RF Target Encoded", "RF Tuned"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_rf$score(msr("regr.rmse")), pred_rf_te$score(msr("regr.rmse")), pred_tuned$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_rf$score(msr("regr.mae")), pred_rf_te$score(msr("regr.mae")), pred_tuned$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_rf$score(msr("regr.rsq")), pred_rf_te$score(msr("regr.rsq")), pred_tuned$score(msr("regr.rsq")))
+)
+results_rf
+```
 
-
-
+The tuned Random Forest model achieved the best overall performance among the tested Random Forest models. Compared to the default model, tuning reduced both RMSE and MAE while also improving the RSQ.
 
 
 

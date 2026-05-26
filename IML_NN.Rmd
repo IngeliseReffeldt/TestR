@@ -1,0 +1,173 @@
+---
+title: "IML_NN"
+author: "Philip Nordfang"
+date: "2026-05-26"
+output: html_document
+---
+
+
+```{r}
+library(mlr3)
+library(mlr3learners)
+library(mlr3tuning)
+library(mlr3mbo)
+library(mlr3pipelines)
+library(mlr3torch)
+library(torch)
+library(paradox)
+library(future)
+library(tidyverse)
+library(forcats)
+library(mlr3extralearners)
+library(OpenML)
+library(mgcv)
+library(kknn)
+library(lightgbm)
+```
+
+###### DATA HANDLING ######
+```{r}
+MPL_data = freMPL
+```
+
+```{r}
+summary(MPL_data)
+```
+
+
+```{r}
+hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
+    xlab ="Claim Amount",
+    col ="blue")
+```
+
+```{r}
+MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd <- as.Date(MPL_data$RecordEnd)
+MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
+```
+
+```{r}
+# Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data
+MPL_data_lump <- MPL_data
+
+factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
+  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
+  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
+}
+```
+
+```{r}
+unique(MPL_data_lump$SocioCateg)
+```
+
+### convert categorical variables to factors
+```{r}
+categorical_vars <- c("RecordEnd", "VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
+```
+
+##### DEFAULT NEURAL NETWORK MODEL #####
+
+```{r}
+task_nn <- TaskRegr$new(
+  id = "claim_amount",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task_nn, ratio = 0.8)
+
+train_set <- split$train
+test_set  <- split$test
+```
+
+```{r}
+# MLP (Multi layer perceptron): Adam optimizer. SGD on mini batches (batch size = 32). See mlr_learners$get("regr.mlp")
+graph_nn =
+  po("encode", method = "one-hot") %>>%
+  po("scale") %>>%
+  lrn(
+    "regr.mlp",
+    epochs = 100,
+    batch_size = 32,
+    patience = 10, # Stopping process after 10 epochs without any improvement on validation set.
+    measures_valid = msr("regr.rmse")
+  )
+```
+
+```{r}
+learner_nn = as_learner(graph_nn)
+```
+
+```{r}
+set_validate(learner_nn, validate = 0.2) 
+# Splitting the training data into new training and validation sets. This is used for early stopping.
+```
+
+```{r}
+learner_nn$train(
+  task_nn,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_nn = learner_nn$predict(
+  task_nn,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_nn$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+
+#### BASELINE MODEL FOR COMPARISON ######
+
+```{r}
+baseline <- lrn("regr.featureless")
+```
+
+```{r}
+baseline$train(task_knn, row_ids = split_knn$train)
+```
+
+```{r}
+pred_baseline <- baseline$predict(task_knn, row_ids = split_knn$test)
+```
+
+```{r}
+pred_baseline$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+
+###### RESULTS ######
+
+```{r}
+results_nn <- data.frame(
+  Model = c("Baseline", "NN Default"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_nn$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_nn$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_nn$score(msr("regr.rsq")))
+)
+results_nn
+```
+
+

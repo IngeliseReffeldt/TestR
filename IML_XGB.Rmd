@@ -11,6 +11,8 @@ library(mlr3learners)
 library(mlr3tuning)
 library(mlr3mbo)
 library(mlr3pipelines)
+library(mlr3torch)
+library(torch)
 library(paradox)
 library(future)
 library(tidyverse)
@@ -19,6 +21,7 @@ library(mlr3extralearners)
 library(OpenML)
 library(mgcv)
 library(kknn)
+library(lightgbm)
 ```
 
 ###### DATA HANDLING ######
@@ -39,6 +42,7 @@ hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
 
 ```{r}
 MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd <- as.Date(MPL_data$RecordEnd)
 MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
@@ -61,11 +65,11 @@ unique(MPL_data_lump$SocioCateg)
 
 ### convert categorical variables to factors
 ```{r}
-categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+categorical_vars <- c("RecordEnd", "VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
 MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
 ```
 
-##### DEFINING XGBoost MODEL #####
+##### DEFAULT XGBoost MODEL #####
 
 ```{r}
 task_xgb <- TaskRegr$new(
@@ -85,13 +89,84 @@ test_set  <- split$test
 ```
 
 ```{r}
-learner_xgb <- as_learner(
-  
+learner_xgb_default <- as_learner(
   po("encode", method = "one-hot") %>>%
-    
-    lrn("regr.xgboost",
-        objective = "reg:squarederror",
-        eval_metric = "rmse"
+    lrn(
+      "regr.xgboost",
+      objective = "reg:squarederror",
+      eval_metric = "rmse"
+    )
+)
+```
+
+```{r}
+learner_xgb_default$train(
+  task_xgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_xgb_default <- learner_xgb_default$predict(
+  task_xgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_xgb_default$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TARGET ENCODING #####
+
+```{r}
+learner_xgb_te <- as_learner(
+  po("encodeimpact") %>>% #encodeimpact performs target encoding
+    lrn(
+      "regr.xgboost",
+      objective = "reg:squarederror",
+      eval_metric = "rmse"
+    )
+)
+```
+
+```{r}
+learner_xgb_te$train(
+  task_xgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_xgb_te <- learner_xgb_te$predict(
+  task_xgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_xgb_te$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+The performance of the two models with the different encoding methods was very similar. However, the one-hot encoding lead to a slightly better model performance and therefore, we proceed with tuning that models hyperparameters.
+
+##### TUNING #####
+
+```{r}
+learner_xgb_tuned <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn(
+      "regr.xgboost",
+      objective = "reg:squarederror",
+      eval_metric = "rmse"
     )
 )
 ```
@@ -108,25 +183,17 @@ search_space <- ps(
 ```
 
 ```{r}
-resampling <- rsmp("cv", folds = 5)
-```
-
-```{r}
 tuner <- tnr("random_search")
-```
-
-```{r}
-terminator <- trm("evals", n_evals = 50)
 ```
 
 ```{r}
 instance <- TuningInstanceBatchSingleCrit$new(
   task = task_xgb,
-  learner = learner_xgb,
-  resampling = resampling,
+  learner = learner_xgb_tuned,
+  resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
   search_space = search_space,
-  terminator = terminator
+  terminator = trm("evals", n_evals = 50)
 )
 ```
 
@@ -137,17 +204,17 @@ tuner$optimize(instance)
 
 
 ```{r}
-learner_xgb$param_set$values <- instance$result_learner_param_vals
+learner_xgb_tuned$param_set$values <- instance$result_learner_param_vals
 ```
 
 ```{r}
-learner_xgb$train(task_xgb, row_ids = train_set)
+learner_xgb_tuned$train(task_xgb, row_ids = train_set)
 ```
 
 ```{r}
-pred_xgb <- learner_xgb$predict(task_xgb, row_ids = test_set)
+pred_xgb_tuned <- learner_xgb_tuned$predict(task_xgb, row_ids = test_set)
 
-pred_xgb$score(list(
+pred_xgb_tuned$score(list(
   msr("regr.rmse"),
   msr("regr.mae"),
   msr("regr.rsq")
@@ -176,3 +243,18 @@ pred_baseline$score(list(
   msr("regr.rsq")
 ))
 ```
+
+
+###### RESULTS ######
+
+```{r}
+results_xgb <- data.frame(
+  Model = c("Baseline", "XGB Default", "XGB Target Encoded", "XGB Tuned"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_xgb_default$score(msr("regr.rmse")), pred_xgb_te$score(msr("regr.rmse")), pred_xgb_tuned$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_xgb_default$score(msr("regr.mae")), pred_xgb_te$score(msr("regr.mae")), pred_xgb_tuned$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_xgb_default$score(msr("regr.rsq")), pred_xgb_te$score(msr("regr.rsq")), pred_xgb_tuned$score(msr("regr.rsq")))
+)
+results_xgb
+```
+
+

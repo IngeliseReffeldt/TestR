@@ -11,6 +11,8 @@ library(mlr3learners)
 library(mlr3tuning)
 library(mlr3mbo)
 library(mlr3pipelines)
+library(mlr3torch)
+library(torch)
 library(paradox)
 library(future)
 library(tidyverse)
@@ -40,6 +42,7 @@ hist(MPL_data$ClaimAmount, main ="Claim amount distribution",
 
 ```{r}
 MPL_data <- subset(MPL_data, select = -ClaimInd)
+MPL_data$RecordEnd <- as.Date(MPL_data$RecordEnd)
 MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
 ```
 
@@ -62,11 +65,11 @@ unique(MPL_data_lump$SocioCateg)
 
 ### convert categorical variables to factors
 ```{r}
-categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+categorical_vars <- c("RecordEnd", "VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
 MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
 ```
 
-##### DEFINING XGBoost MODEL #####
+##### DEFAULT LIGHTGBM MODEL #####
 
 ```{r}
 task_lgb <- TaskRegr$new(
@@ -86,10 +89,79 @@ test_set  <- split$test
 ```
 
 ```{r}
-learner_lgb <- as_learner(
-  
+learner_lgb_default <- as_learner(
   po("encode", method = "one-hot") %>>%
-    
+    lrn("regr.lightgbm",
+        objective = "regression",
+        verbose = -1
+    )
+)
+```
+
+```{r}
+learner_lgb_default$train(
+  task_lgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_lgb_default <- learner_lgb_default$predict(
+  task_lgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_lgb_default$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TARGET ENCODING ####
+
+```{r}
+learner_lgb_te <- as_learner(
+  po("encodeimpact") %>>%
+    lrn(
+      "regr.lightgbm",
+      objective = "regression",
+      verbose = -1
+    )
+)
+```
+
+```{r}
+learner_lgb_te$train(
+  task_lgb,
+  row_ids = train_set
+)
+```
+
+```{r}
+pred_lgb_te <- learner_lgb_te$predict(
+  task_lgb,
+  row_ids = test_set
+)
+```
+
+```{r}
+pred_lgb_te$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+Once again, the target encoding does not improve performance, so we proceed with tuning the hyperparameters of the default model.
+
+##### TUNING ####
+
+```{r}
+learner_lgb_tuned <- as_learner(
+  po("encode", method = "one-hot") %>>%
     lrn("regr.lightgbm",
         objective = "regression",
         verbose = -1
@@ -100,24 +172,20 @@ learner_lgb <- as_learner(
 ```{r}
 search_space <- ps(
   regr.lightgbm.learning_rate =
-    p_dbl(0.01, 0.2),
+    p_dbl(0.01, 0.1),
   regr.lightgbm.num_leaves =
-    p_int(15, 150),
+    p_int(20, 80),
   regr.lightgbm.max_depth =
-    p_int(3, 12),
+    p_int(3, 8),
   regr.lightgbm.feature_fraction =
-    p_dbl(0.5, 1),
+    p_dbl(0.7, 1),
   regr.lightgbm.bagging_fraction =
-    p_dbl(0.5, 1),
+    p_dbl(0.7, 1),
   regr.lightgbm.min_data_in_leaf =
-    p_int(10, 100),
+    p_int(20, 80),
   regr.lightgbm.num_iterations =
-    p_int(100, 1000)
+    p_int(100, 500)
 )
-```
-
-```{r}
-resampling <- rsmp("cv", folds = 5)
 ```
 
 ```{r}
@@ -125,17 +193,13 @@ tuner <- tnr("random_search")
 ```
 
 ```{r}
-terminator <- trm("evals", n_evals = 50)
-```
-
-```{r}
 instance <- TuningInstanceBatchSingleCrit$new(
   task = task_lgb,
-  learner = learner_lgb,
-  resampling = resampling,
+  learner = learner_lgb_tuned,
+  resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
   search_space = search_space,
-  terminator = terminator
+  terminator = trm("evals", n_evals = 50)
 )
 ```
 
@@ -146,17 +210,17 @@ tuner$optimize(instance)
 
 
 ```{r}
-learner_lgb$param_set$values <- instance$result_learner_param_vals
+learner_lgb_tuned$param_set$values <- instance$result_learner_param_vals
 ```
 
 ```{r}
-learner_lgb$train(task_lgb, row_ids = train_set)
+learner_lgb_tuned$train(task_lgb, row_ids = train_set)
 ```
 
 ```{r}
-pred_lgb <- learner_lgb$predict(task_lgb, row_ids = test_set)
+pred_lgb_tuned <- learner_lgb_tuned$predict(task_lgb, row_ids = test_set)
 
-pred_lgb$score(list(
+pred_lgb_tuned$score(list(
   msr("regr.rmse"),
   msr("regr.mae"),
   msr("regr.rsq")
@@ -185,3 +249,20 @@ pred_baseline$score(list(
   msr("regr.rsq")
 ))
 ```
+
+
+###### RESULTS ######
+
+```{r}
+results_lgb <- data.frame(
+  Model = c("Baseline", "LGBM Default", "LGBM Target Encoded", "LGBM Tuned"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_lgb_default$score(msr("regr.rmse")), pred_lgb_te$score(msr("regr.rmse")), pred_lgb_tuned$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_lgb_default$score(msr("regr.mae")), pred_lgb_te$score(msr("regr.mae")), pred_lgb_tuned$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_lgb_default$score(msr("regr.rsq")), pred_lgb_te$score(msr("regr.rsq")), pred_lgb_tuned$score(msr("regr.rsq")))
+)
+results_lgb
+```
+Hyperparameter tuning did not improve the predictive performance of the LightGBM model, suggesting that the default parameter settings were already sufficiently well adapted to the dataset.
+
+
+
