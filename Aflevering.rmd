@@ -84,11 +84,44 @@ summary(MPL_data_lump)
 task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
 ```
 
-
 # Generisk kunde 1: 
 Gennemsnits kunde
 ```{r}
-customer1 <- 
+gns_kunde <- MPL_data_lump[1,]
+
+gns_kunde$Exposure <- 1  
+gns_kunde$LicAge <- as.numeric(as.integer(mean(MPL_data_lump$LicAge)))
+gns_kunde$RecordBeg <- as.Date("2004-01-01")
+gns_kunde$RecordEnd <- as.Date("2005-01-01")
+gns_kunde$VehAge <- factor(names(sort(table(MPL_data_lump$VehAge), decreasing = TRUE))[1],
+                           levels = levels(MPL_data_lump$VehAge))
+gns_kunde$Gender <- factor(names(sort(table(MPL_data_lump$Gender), decreasing = TRUE))[1],
+                           levels = levels(MPL_data_lump$Gender))
+gns_kunde$MariStat <- factor(names(sort(table(MPL_data_lump$MariStat), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$MariStat))
+gns_kunde$SocioCateg <- factor(names(sort(table(MPL_data_lump$SocioCateg), decreasing = TRUE))[1],
+                               levels = levels(MPL_data_lump$SocioCateg))
+gns_kunde$VehUsage <- factor(names(sort(table(MPL_data_lump$VehUsage), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$VehUsage))
+gns_kunde$DrivAge <- as.numeric(as.integer(mean(MPL_data_lump$DrivAge)))
+gns_kunde$HasKmLimit <- as.numeric(names(sort(table(MPL_data_lump$HasKmLimit), decreasing = TRUE))[1])
+gns_kunde$BonusMalus <- as.numeric(as.integer(mean(MPL_data_lump$BonusMalus)))
+gns_kunde$VehBody <- factor(names(sort(table(MPL_data_lump$VehBody), decreasing = TRUE))[1],
+                            levels = levels(MPL_data_lump$VehBody))
+gns_kunde$VehPrice <- factor(names(sort(table(MPL_data_lump$VehPrice), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$VehPrice))
+gns_kunde$VehEngine <- factor(names(sort(table(MPL_data_lump$VehEngine), decreasing = TRUE))[1],
+                              levels = levels(MPL_data_lump$VehEngine))
+gns_kunde$VehEnergy <- factor(names(sort(table(MPL_data_lump$VehEnergy), decreasing = TRUE))[1],
+                              levels = levels(MPL_data_lump$VehEnergy))
+gns_kunde$VehMaxSpeed <- factor(names(sort(table(MPL_data_lump$VehMaxSpeed), decreasing = TRUE))[1],
+                                levels = levels(MPL_data_lump$VehMaxSpeed))
+gns_kunde$VehClass <- factor(names(sort(table(MPL_data_lump$VehClass), decreasing = TRUE))[1],
+                             levels = levels(MPL_data_lump$VehClass))
+gns_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
+gns_kunde$RiskVar <- as.numeric(as.integer(mean(MPL_data_lump$RiskVar)))
+gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = TRUE))[1],
+                           levels = levels(MPL_data_lump$Garage))
 ```
 
 # Generisk kunde 2: 
