@@ -85,11 +85,6 @@ Final data:
 summary(MPL_data_lump)
 ```
 
-# Task
-```{r}
-task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
-```
-
 # Generisk kunde 1: 
 Gennemsnits kunde
 ```{r}
@@ -133,6 +128,31 @@ gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = 
 # Generisk kunde 2: 
 Ekstrem kunde
 
+#### TASK and SPLIT 
+
+# Task
+```{r}
+task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
+```
+
+```{r}
+task <- TaskRegr$new(
+  id = "claims",
+  backend = MPL_data_lump,
+  target = "ClaimAmount"
+)
+```
+
+```{r}
+set.seed(2026)
+
+split <- partition(task, ratio = 0.8)
+
+train_set <- split$train
+test_set <- split$test
+```
+
+
 #### BASELINE MODEL FOR COMPARISON ######
 
 ```{r}
@@ -140,11 +160,11 @@ baseline <- lrn("regr.featureless")
 ```
 
 ```{r}
-baseline$train(task_knn, row_ids = split_knn$train)
+baseline$train(task, row_ids = split$train)
 ```
 
 ```{r}
-pred_baseline <- baseline$predict(task_knn, row_ids = split_knn$test)
+pred_baseline <- baseline$predict(task, row_ids = split$test)
 ```
 
 ```{r}
@@ -154,14 +174,6 @@ pred_baseline$score(msr("regr.rsq"))
 ```
 
 ##### DEFINING KNN MODEL #####
-
-```{r}
-task_knn <- TaskRegr$new(
-  id = "claims",
-  backend = MPL_data_lump,
-  target = "ClaimAmount"
-)
-```
 
 ```{r}
 graph_knn <- 
@@ -175,20 +187,11 @@ learner_knn <- as_learner(graph_knn)
 ```
 
 ```{r}
-set.seed(2026)
-
-split_knn <- partition(task_knn, ratio = 0.8)
-
-train_set_knn <- split_knn$train
-test_set_knn  <- split_knn$test
+learner_knn$train(task, row_ids = train_set)
 ```
 
 ```{r}
-learner_knn$train(task_knn, row_ids = train_set_knn)
-```
-
-```{r}
-prediction_knn <- learner_knn$predict(task_knn, row_ids = test_set_knn)
+prediction_knn <- learner_knn$predict(task, row_ids = test_set)
 ```
 
 ```{r}
@@ -226,7 +229,7 @@ at_knn <- auto_tuner(
 ```
 
 ```{r}
-at_knn$train(task_knn, row_ids = train_set_knn)
+at_knn$train(task, row_ids = train_set)
 ```
 
 ```{r}
@@ -234,7 +237,7 @@ at_knn$tuning_result
 ```
 
 ```{r}
-pred_knn <- at_knn$predict(task_knn, row_ids = test_set_knn)
+pred_knn <- at_knn$predict(task, row_ids = test_set)
 
 pred_knn$score(msr("regr.rmse"))
 pred_knn$score(msr("regr.mae"))
@@ -252,15 +255,6 @@ task_rf <- TaskRegr$new(
 ```
 
 ```{r}
-set.seed(2026)
-
-split <- partition(task_rf, ratio = 0.8)
-
-train_set <- split$train
-test_set  <- split$test
-```
-
-```{r}
 learner_rf <- lrn(
   "regr.ranger",             #ranger implements Random Forest
   importance = "impurity",
@@ -269,13 +263,11 @@ learner_rf <- lrn(
 ```
 
 ```{r}
-set.seed(2026)
-
-learner_rf$train(task_rf, row_ids = train_set)
+learner_rf$train(task, row_ids = train_set)
 ```
 
 ```{r}
-pred_rf <- learner_rf$predict(task_rf, row_ids = test_set)
+pred_rf <- learner_rf$predict(task, row_ids = test_set)
 
 pred_rf$score(list(
   msr("regr.rmse"),
@@ -308,17 +300,15 @@ graph_learner_rf_te <- as_learner(graph_rf_te)
 ```
 
 ```{r}
-set.seed(2026)
-
 graph_learner_rf_te$train(
-  task_rf,
+  task,
   row_ids = train_set
 )
 ```
 
 ```{r}
 pred_rf_te <- graph_learner_rf_te$predict(
-  task_rf,
+  task,
   row_ids = test_set
 )
 ```
@@ -356,9 +346,7 @@ at_rf <- auto_tuner(
 ```
 
 ```{r}
-set.seed(2026)
-
-at_rf$train(task_rf, row_ids = train_set)
+at_rf$train(task, row_ids = train_set)
 ```
 
 ```{r}
@@ -366,7 +354,7 @@ at_rf$tuning_result
 ```
 
 ```{r}
-pred_tuned <- at_rf$predict(task_rf, row_ids = test_set)
+pred_tuned <- at_rf$predict(task, row_ids = test_set)
 
 pred_tuned$score(list(
   msr("regr.rmse"),
@@ -390,23 +378,6 @@ results_rf
 ##### DEFAULT XGBoost MODEL #####
 
 ```{r}
-task_xgb <- TaskRegr$new(
-  id = "claim_amount",
-  backend = MPL_data_lump,
-  target = "ClaimAmount"
-)
-```
-
-```{r}
-set.seed(2026)
-
-split <- partition(task_xgb, ratio = 0.8)
-
-train_set <- split$train
-test_set  <- split$test
-```
-
-```{r}
 learner_xgb_default <- as_learner(
   po("encode", method = "one-hot") %>>%
     lrn(
@@ -419,14 +390,14 @@ learner_xgb_default <- as_learner(
 
 ```{r}
 learner_xgb_default$train(
-  task_xgb,
+  task,
   row_ids = train_set
 )
 ```
 
 ```{r}
 pred_xgb_default <- learner_xgb_default$predict(
-  task_xgb,
+  task,
   row_ids = test_set
 )
 ```
@@ -454,14 +425,14 @@ learner_xgb_te <- as_learner(
 
 ```{r}
 learner_xgb_te$train(
-  task_xgb,
+  task,
   row_ids = train_set
 )
 ```
 
 ```{r}
 pred_xgb_te <- learner_xgb_te$predict(
-  task_xgb,
+  task,
   row_ids = test_set
 )
 ```
@@ -506,7 +477,7 @@ tuner <- tnr("random_search")
 
 ```{r}
 instance <- TuningInstanceBatchSingleCrit$new(
-  task = task_xgb,
+  task = task,
   learner = learner_xgb_tuned,
   resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
@@ -530,7 +501,7 @@ learner_xgb_tuned$train(task_xgb, row_ids = train_set)
 ```
 
 ```{r}
-pred_xgb_tuned <- learner_xgb_tuned$predict(task_xgb, row_ids = test_set)
+pred_xgb_tuned <- learner_xgb_tuned$predict(task, row_ids = test_set)
 
 pred_xgb_tuned$score(list(
   msr("regr.rmse"),
@@ -554,23 +525,6 @@ results_xgb
 ##### DEFAULT LIGHTGBM MODEL #####
 
 ```{r}
-task_lgb <- TaskRegr$new(
-  id = "claim_amount",
-  backend = MPL_data_lump,
-  target = "ClaimAmount"
-)
-```
-
-```{r}
-set.seed(2026)
-
-split <- partition(task_lgb, ratio = 0.8)
-
-train_set <- split$train
-test_set  <- split$test
-```
-
-```{r}
 learner_lgb_default <- as_learner(
   po("encode", method = "one-hot") %>>%
     lrn("regr.lightgbm",
@@ -582,14 +536,14 @@ learner_lgb_default <- as_learner(
 
 ```{r}
 learner_lgb_default$train(
-  task_lgb,
+  task,
   row_ids = train_set
 )
 ```
 
 ```{r}
 pred_lgb_default <- learner_lgb_default$predict(
-  task_lgb,
+  task,
   row_ids = test_set
 )
 ```
@@ -617,14 +571,14 @@ learner_lgb_te <- as_learner(
 
 ```{r}
 learner_lgb_te$train(
-  task_lgb,
+  task,
   row_ids = train_set
 )
 ```
 
 ```{r}
 pred_lgb_te <- learner_lgb_te$predict(
-  task_lgb,
+  task,
   row_ids = test_set
 )
 ```
@@ -676,7 +630,7 @@ tuner <- tnr("random_search")
 
 ```{r}
 instance <- TuningInstanceBatchSingleCrit$new(
-  task = task_lgb,
+  task = task,
   learner = learner_lgb_tuned,
   resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
@@ -724,23 +678,6 @@ results_lgb
 ##### DEFAULT NEURAL NETWORK MODEL #####
 
 ```{r}
-task_nn <- TaskRegr$new(
-  id = "claim_amount",
-  backend = MPL_data_lump,
-  target = "ClaimAmount"
-)
-```
-
-```{r}
-set.seed(2026)
-
-split <- partition(task_nn, ratio = 0.8)
-
-train_set <- split$train
-test_set  <- split$test
-```
-
-```{r}
 # MLP (Multi layer perceptron): Adam optimizer. SGD on mini batches (batch size = 32). See mlr_learners$get("regr.mlp")
 graph_nn =
   po("encode", method = "one-hot") %>>%
@@ -765,14 +702,14 @@ set_validate(learner_nn, validate = 0.2)
 
 ```{r}
 learner_nn$train(
-  task_nn,
+  task,
   row_ids = train_set
 )
 ```
 
 ```{r}
 pred_nn = learner_nn$predict(
-  task_nn,
+  task,
   row_ids = test_set
 )
 ```
