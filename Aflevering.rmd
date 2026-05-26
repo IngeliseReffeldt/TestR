@@ -20,6 +20,16 @@ library(paradox)
 library(readr)
 library(tidyverse)
 library(mlr3viz)
+library(mlr3torch)
+library(torch)
+library(future)
+library(forcats)
+library(mlr3extralearners)
+library(OpenML)
+library(mgcv)
+library(kknn)
+library(lightgbm)
+library(Metrics)
 ```
 
 # Load data
