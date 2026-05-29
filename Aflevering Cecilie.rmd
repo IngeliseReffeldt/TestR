@@ -40,12 +40,51 @@ freMPL$VehMaxSpeed <- factor(freMPL$VehMaxSpeed,
                                         "180-190 km/h", "190-200 km/h", "200-220 km/h",
                                         "220+ km/h"))
 
+# HasKmLimit
+freMPL$HasKmLimit <- factor(freMPL$HasKmLimit)
+
 # Do we need to do something to SocioCateg?
 # Why do ClaimInt = 0 have negative ClaimAmount? subset = freMPL[freMPL$ClaimInd == 0,]
 
 # Variable, der skal fjernes 
-freMPL <- subset(freMPL, select = -`...1`) 
+#freMPL <- subset(freMPL, select = -`...1`) 
 ```
+
+We remove ClaimInd from the dataset, since we want to predict a price for a given customer, and we don't know, if the customer will have a claim.
+Remove ...1 since it is just row_numbers.
+```{r}
+MPL_data <- subset(freMPL, select = -c(ClaimInd,...1))
+```
+
+We replace null-values from RecordEnd, so we don't have to deal with null values.
+```{r}
+MPL_data$RecordEnd[is.na(MPL_data$RecordEnd)] <- as.Date("2005-01-01")
+```
+
+We replace all date-values with numeric values, because many models cannot handle date-values.
+```{r}
+MPL_data$RecordBeg <- as.numeric(MPL_data$RecordBeg)
+MPL_data$RecordEnd <- as.numeric(MPL_data$RecordEnd)
+```
+
+
+```{r}
+MPL_data_lump <- MPL_data
+
+factor_cols <- names(MPL_data_lump)[sapply(MPL_data_lump, function(x) is.factor(x) || is.character(x))]
+
+for (col in factor_cols) {
+  MPL_data_lump[[col]] <- as.factor(MPL_data_lump[[col]])
+  MPL_data_lump[[col]] <- fct_lump_min(MPL_data_lump[[col]], min = 10)
+  MPL_data_lump[[col]] <- droplevels(MPL_data_lump[[col]])
+}
+
+categorical_vars <- c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass", "Garage") # VehMax Speed should perhaps be converted to a numeric variable by taking eg the max number in the observations given interval
+
+MPL_data_lump[categorical_vars] <- lapply(MPL_data_lump[categorical_vars], factor)
+```
+
+####
 
 ```{r}
 View(freMPL)
@@ -1256,5 +1295,57 @@ sv <- shapviz(shap_values, X = task$data(rows = split$test)[1:10,])
 
 # Beeswarm plot
 sv_importance(sv, kind = "beeswarm")
+```
+
+### nyt 
+
+```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
+      po("datefeatures") %>>%
+      po("encode", method = "treatment",
+         affect_columns = categorical_selector, id = "binary_enc") %>>%
+      learner
+  )
+}
+
+set.seed(2026)
+task_mpl <- as_task_regr(MPL_data_lump, target = "ClaimAmount")
+split = partition(task_mpl, ratio = 0.8) 
+## BEMÆRK nedenstående kørte med split på task (dvs. kun 1000 rækker, 800/200)
+
+X_mpl <- task_mpl$data(cols = task_mpl$feature_names)
+
+lrn_rf = make_encoded_learner(lrn("regr.ranger"))
+lrn_rf$train(task_mpl, row_ids = split$train)
+
+# -----------------------------------------
+# 2. SHAP explanation for observation 100
+# -----------------------------------------
+
+x_interest_mpl <- task_mpl$data(cols = task_mpl$feature_names, rows = split$test)
+x_interest_mpl[1,]
+
+# DALEX explainer
+explainer_mpl <- DALEXtra::explain_mlr3(
+  lrn_rf,
+  data = X_mpl,
+  y = MPL_data_lump$ClaimAmount,
+  label = "rf", 
+  colorize = FALSE
+)
+
+# SHAP values
+shap <- predict_parts(
+  explainer_mpl,
+  new_observation = x_interest_mpl[1,],
+  type = "shap"
+)$contribution
+
+# visualize
+plot(shap)
 ```
 
