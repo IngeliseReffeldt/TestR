@@ -1099,4 +1099,28 @@ ggplot(df, aes(x=y,y=x)) +
   labs(x="Shapley Value", y = "Feature", title = "Gns_kunde")
 ```
 
+## PDP and ALE
+
+```{r}
+explainer_fun <- function(learner_trained, task){
+  explainer = DALEXtra::explain_mlr3(
+    learner_trained,
+    data = task$data(cols = task$feature_names),
+    y = task$data(cols = task$target_names)[[1]],
+    colorize = FALSE
+  )
+}
+```
+
+PDP and ALE for random forrest
+```{r}
+explainer <- explainer_fun(learner_rf_tuned_2, task)
+
+pdps <- model_profile(explainer, type="partial")
+ales <- model_profile(explainer, type="accumulated")
+
+plot(pdps)
+plot(ales)
+```
+
 
