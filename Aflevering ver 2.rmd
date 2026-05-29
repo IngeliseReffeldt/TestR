@@ -61,17 +61,17 @@ MPL_data$RecordEnd <- as.numeric(MPL_data$RecordEnd)
 Ordered factors and factors.
 ```{r}
 # VehAge is an ordered variable
-freMPL$VehAge <- factor(freMPL$VehAge, levels = c("0", "1", "2", "3", "4", "5", "6-7", "8-9", "10+"))
+MPL_data$VehAge <- factor(MPL_data$VehAge, levels = c("0", "1", "2", "3", "4", "5", "6-7", "8-9", "10+"))
 
 # VehMaxSpeed is an ordered variable
-freMPL$VehMaxSpeed <- factor(freMPL$VehMaxSpeed,
+MPL_data$VehMaxSpeed <- factor(MPL_data$VehMaxSpeed,
                              levels = c("1-130 km/h", "130-140 km/h", "140-150 km/h",
                                         "150-160 km/h", "160-170 km/h", "170-180 km/h", 
                                         "180-190 km/h", "190-200 km/h", "200-220 km/h",
                                         "220+ km/h"))
 
 # HasKmLimit
-freMPL$HasKmLimit <- factor(freMPL$HasKmLimit)
+MPL_data$HasKmLimit <- factor(MPL_data$HasKmLimit)
 ```
 
 Creating a new data set where few observations are lumped together as "other" to avoid problems with test-observations that are not not seen in the training data. 
@@ -144,14 +144,6 @@ Ekstrem kunde
 # Task
 ```{r}
 task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
-```
-
-```{r}
-task <- TaskRegr$new(
-  id = "claims",
-  backend = MPL_data_lump,
-  target = "ClaimAmount"
-)
 ```
 
 ```{r}
@@ -401,26 +393,28 @@ pred_rf_te$score(list(
 ))
 ```
 
-The default Random Forest model performed better overall than the target encoded version. Although target encoding slightly improved the MAE, it led to a higher RMSE and a lower RSQ, suggesting that the model explained less of the variation in the data. Since Random Forest can already handle categorical variables quite well, target encoding did not provide any clear improvement in this case. Therefore, the default Random Forest model is chosen for further tuning.
-
 ##### TUNING ######
 
 ```{r}
-search_space <- ps(
-  mtry = p_int(lower = 2, upper = 12),
-  min.node.size = p_int(lower = 1, upper = 20),
-  sample.fraction = p_dbl(lower = 0.5, upper = 1),
-  num.trees = p_int(lower = 500, upper = 1500)
+learner_rf_tuned <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn("regr.ranger",
+                importance = "impurity",
+                predict_type = "response",
+                num.trees = to_tune(c(500:1500)),
+                min.node.size = to_tune(c(1:20)),
+                mtry = to_tune(c(2:12)),
+                sample.fraction = to_tune(p_dbl(lower = 0.5, upper = 1))
+                )
 )
 ```
 
 ```{r}
 at_rf <- auto_tuner(
   tuner = tnr("random_search"),
-  learner = learner_rf,
+  learner = learner_rf_tuned,
   resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
-  search_space = search_space,
   terminator = trm("evals", n_evals = 25)
 )
 ```
@@ -443,14 +437,58 @@ pred_tuned$score(list(
 ))
 ```
 
+#### TUNING WITH NEW NODE SIZES ####
+
+```{r}
+learner_rf_tuned_2 <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn("regr.ranger",
+                importance = "impurity",
+                predict_type = "response",
+                num.trees = to_tune(c(500:1500)),
+                min.node.size = to_tune(c(100:2000)),
+                mtry = to_tune(c(2:12)),
+                sample.fraction = to_tune(p_dbl(lower = 0.5, upper = 1))
+                )
+)
+```
+
+```{r}
+at_rf_2 <- auto_tuner(
+  tuner = tnr("random_search"),
+  learner = learner_rf_tuned_2,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 25)
+)
+```
+
+```{r}
+at_rf_2$train(task, row_ids = train_set)
+```
+
+```{r}
+at_rf_2$tuning_result
+```
+
+```{r}
+pred_tuned_2 <- at_rf_2$predict(task, row_ids = test_set)
+
+pred_tuned_2$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
 ### RESULTS RF ###
 
 ```{r}
 results_rf <- data.frame(
-  Model = c("Baseline", "RF Default", "RF Target Encoded", "RF Tuned"),
-  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_rf$score(msr("regr.rmse")), pred_rf_te$score(msr("regr.rmse")), pred_tuned$score(msr("regr.rmse"))),
-  MAE = c(pred_baseline$score(msr("regr.mae")), pred_rf$score(msr("regr.mae")), pred_rf_te$score(msr("regr.mae")), pred_tuned$score(msr("regr.mae"))),
-  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_rf$score(msr("regr.rsq")), pred_rf_te$score(msr("regr.rsq")), pred_tuned$score(msr("regr.rsq")))
+  Model = c("Baseline", "RF Default", "RF Target Encoded", "RF Tuned", "RF Tuned Node"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_rf$score(msr("regr.rmse")), pred_rf_te$score(msr("regr.rmse")), pred_tuned$score(msr("regr.rmse")), pred_tuned_2$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_rf$score(msr("regr.mae")), pred_rf_te$score(msr("regr.mae")), pred_tuned$score(msr("regr.mae")), pred_tuned_2$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_rf$score(msr("regr.rsq")), pred_rf_te$score(msr("regr.rsq")), pred_tuned$score(msr("regr.rsq")), pred_tuned_2$score(msr("regr.rsq")))
 )
 results_rf
 ```
@@ -534,54 +572,29 @@ learner_xgb_tuned <- as_learner(
   po("encode", method = "one-hot") %>>%
     lrn(
       "regr.xgboost",
-      objective = "reg:squarederror",
-      eval_metric = "rmse"
+      eta = to_tune(p_dbl(0.01, 0.3)),
+      max_depth = to_tune(c(1:10)),
+      nrounds = to_tune(c(100:1000))
     )
 )
 ```
 
 ```{r}
-search_space <- ps(
-  regr.xgboost.eta = p_dbl(0.01, 0.3),
-  regr.xgboost.max_depth = p_int(3, 10),
-  regr.xgboost.subsample = p_dbl(0.5, 1),
-  regr.xgboost.colsample_bytree = p_dbl(0.5, 1),
-  regr.xgboost.min_child_weight = p_int(1, 10),
-  regr.xgboost.nrounds = p_int(100, 1000)
-)
-```
-
-```{r}
-tuner <- tnr("random_search")
-```
-
-```{r}
-instance <- TuningInstanceBatchSingleCrit$new(
-  task = task,
+at_xgb <- auto_tuner(
+  tuner = tnr("random_search"),
   learner = learner_xgb_tuned,
   resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
-  search_space = search_space,
   terminator = trm("evals", n_evals = 50)
 )
 ```
 
 ```{r}
-plan(multisession)
-tuner$optimize(instance)
-```
-
-
-```{r}
-learner_xgb_tuned$param_set$values <- instance$result_learner_param_vals
+at_xgb$train(task, row_ids = train_set)
 ```
 
 ```{r}
-learner_xgb_tuned$train(task, row_ids = train_set)
-```
-
-```{r}
-pred_xgb_tuned <- learner_xgb_tuned$predict(task, row_ids = test_set)
+pred_xgb_tuned <- at_xgb$predict(task, row_ids = test_set)
 
 pred_xgb_tuned$score(list(
   msr("regr.rmse"),
@@ -679,64 +692,72 @@ Once again, the target encoding does not improve performance, so we proceed with
 learner_lgb_tuned <- as_learner(
   po("encode", method = "one-hot") %>>%
     lrn("regr.lightgbm",
-        objective = "regression",
-        verbose = -1
+        learning_rate = to_tune(p_dbl(0.01, 0.1)),
+        num_leaves = to_tune(c(20:80)),
+        max_depth = to_tune(c(1:10)),
+        min_data_in_leaf = to_tune(c(20:80)),
+        num_iterations = to_tune(c(100:500))
     )
 )
 ```
 
 ```{r}
-search_space <- ps(
-  regr.lightgbm.learning_rate =
-    p_dbl(0.01, 0.1),
-  regr.lightgbm.num_leaves =
-    p_int(20, 80),
-  regr.lightgbm.max_depth =
-    p_int(3, 8),
-  regr.lightgbm.feature_fraction =
-    p_dbl(0.7, 1),
-  regr.lightgbm.bagging_fraction =
-    p_dbl(0.7, 1),
-  regr.lightgbm.min_data_in_leaf =
-    p_int(20, 80),
-  regr.lightgbm.num_iterations =
-    p_int(100, 500)
-)
-```
-
-```{r}
-tuner <- tnr("random_search")
-```
-
-```{r}
-instance <- TuningInstanceBatchSingleCrit$new(
-  task = task,
+at_lgb <- auto_tuner(
+  tuner = tnr("random_search"),
   learner = learner_lgb_tuned,
   resampling = rsmp("cv", folds = 5),
   measure = msr("regr.rmse"),
-  search_space = search_space,
   terminator = trm("evals", n_evals = 50)
 )
 ```
 
 ```{r}
-plan(multisession)
-tuner$optimize(instance)
-```
-
-
-```{r}
-learner_lgb_tuned$param_set$values <- instance$result_learner_param_vals
+at_lgb$train(task, row_ids = train_set)
 ```
 
 ```{r}
-learner_lgb_tuned$train(task, row_ids = train_set)
-```
-
-```{r}
-pred_lgb_tuned <- learner_lgb_tuned$predict(task, row_ids = test_set)
+pred_lgb_tuned <- at_lgb$predict(task, row_ids = test_set)
 
 pred_lgb_tuned$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+#### TUNING WITH LARGER LEAVES ###
+
+```{r}
+learner_lgb_tuned_2 <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn("regr.lightgbm",
+        learning_rate = to_tune(p_dbl(0.01, 0.1)),
+        num_leaves = to_tune(c(20:80)),
+        max_depth = to_tune(c(1:10)),
+        min_data_in_leaf = to_tune(c(100:2000)),
+        num_iterations = to_tune(c(100:500))
+    )
+)
+```
+
+```{r}
+at_lgb_2 <- auto_tuner(
+  tuner = tnr("random_search"),
+  learner = learner_lgb_tuned,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 50)
+)
+```
+
+```{r}
+at_lgb_2$train(task, row_ids = train_set)
+```
+
+```{r}
+pred_lgb_tuned_2 <- at_lgb_2$predict(task, row_ids = test_set)
+
+pred_lgb_tuned_2$score(list(
   msr("regr.rmse"),
   msr("regr.mae"),
   msr("regr.rsq")
@@ -747,10 +768,10 @@ pred_lgb_tuned$score(list(
 
 ```{r}
 results_lgb <- data.frame(
-  Model = c("Baseline", "LGBM Default", "LGBM Target Encoded", "LGBM Tuned"),
-  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_lgb_default$score(msr("regr.rmse")), pred_lgb_te$score(msr("regr.rmse")), pred_lgb_tuned$score(msr("regr.rmse"))),
-  MAE = c(pred_baseline$score(msr("regr.mae")), pred_lgb_default$score(msr("regr.mae")), pred_lgb_te$score(msr("regr.mae")), pred_lgb_tuned$score(msr("regr.mae"))),
-  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_lgb_default$score(msr("regr.rsq")), pred_lgb_te$score(msr("regr.rsq")), pred_lgb_tuned$score(msr("regr.rsq")))
+  Model = c("Baseline", "LGBM Default", "LGBM Target Encoded", "LGBM Tuned", "LGBM Tuned Leaf size"),
+  RMSE = c(pred_baseline$score(msr("regr.rmse")), pred_lgb_default$score(msr("regr.rmse")), pred_lgb_te$score(msr("regr.rmse")), pred_lgb_tuned$score(msr("regr.rmse")), pred_lgb_tuned_2$score(msr("regr.rmse"))),
+  MAE = c(pred_baseline$score(msr("regr.mae")), pred_lgb_default$score(msr("regr.mae")), pred_lgb_te$score(msr("regr.mae")), pred_lgb_tuned$score(msr("regr.mae")), pred_lgb_tuned_2$score(msr("regr.mae"))),
+  RSQ = c(pred_baseline$score(msr("regr.rsq")), pred_lgb_default$score(msr("regr.rsq")), pred_lgb_te$score(msr("regr.rsq")), pred_lgb_tuned$score(msr("regr.rsq")), pred_lgb_tuned_2$score(msr("regr.rsq")))
 )
 results_lgb
 ```
