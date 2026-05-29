@@ -836,9 +836,11 @@ results_nn <- data.frame(
 results_nn
 ```
 
+###### Partial Linear Regression ######
+
 We start by making a matrix for the results we want 
 ```{r}
-results <- matrix(0, nrow=5, ncol=3)
+results <- matrix(0, nrow=4, ncol=3)
 rownames(results) = c("LicAge", "Exposure","DrivAge","BonusMalus","VehPrice")
 colnames(results) = c("regr.rmse", "regr.mae", "regr.rsq")
 ```
@@ -847,8 +849,8 @@ Now we make a model for each of our five chosen coefficient, where we focus on o
 
 ##LicAge
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
-task_LicAge_on_allother = as_task_regr(MPL_data_lump, target="LicAge")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
+task_LicAge_on_allother = as_task_regr(MPL_data_lump[split$train,], target="LicAge")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -861,7 +863,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_LicAge_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -874,7 +876,7 @@ lrn_LicAge_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
 cross_fit = function(task, learner, K){
@@ -885,19 +887,19 @@ cross_fit = function(task, learner, K){
   pred$truth - pred$response
 }
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-LicAge_residuals_smooth = cross_fit(task_LicAge_on_allother, lrn_LicAge_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+LicAge_residuals_smooth = cross_fit(task_LicAge_on_allother, lrn_LicAge_on_allother_smooth, K=5)
 
 lm_amount_on_LicAge_smooth = lm(amount_residuals_smooth ~ LicAge_residuals_smooth)
 
 results[1,] <- c(sqrt(mean(lm_amount_on_LicAge_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_LicAge_smooth)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_LicAge_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_LicAge_smooth)$r.squared)
 ```
 ##Exposure 
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
-task_Exposure_on_allother = as_task_regr(MPL_data_lump, target="Exposure")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
+task_Exposure_on_allother = as_task_regr(MPL_data_lump[split$train,], target="Exposure")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -910,7 +912,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_Exposure_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -923,22 +925,22 @@ lrn_Exposure_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-Exposure_residuals_smooth = cross_fit(task_Exposure_on_allother, lrn_Exposure_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+Exposure_residuals_smooth = cross_fit(task_Exposure_on_allother, lrn_Exposure_on_allother_smooth, K=5)
 
 lm_amount_on_Exposure_smooth = lm(amount_residuals_smooth ~ Exposure_residuals_smooth)
 
 results[2,] <- c(sqrt(mean(lm_amount_on_Exposure_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_Exposure_smooth)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_Exposure_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_Exposure_smooth)$r.squared)
 ```
 ##DrivAge
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
-task_DrivAge_on_allother = as_task_regr(MPL_data_lump, target="DrivAge")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
+task_DrivAge_on_allother = as_task_regr(MPL_data_lump[split$train,], target="DrivAge")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -951,7 +953,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_DrivAge_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -964,23 +966,22 @@ lrn_DrivAge_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-DrivAge_residuals_smooth = cross_fit(task_DrivAge_on_allother, lrn_DrivAge_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+DrivAge_residuals_smooth = cross_fit(task_DrivAge_on_allother, lrn_DrivAge_on_allother_smooth, K=5)
 
 lm_amount_on_DrivAge_smooth = lm(amount_residuals_smooth ~ DrivAge_residuals_smooth)
 
 results[3,] <- c(sqrt(mean(lm_amount_on_DrivAge_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_DrivAge_smooth)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_DrivAge_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_DrivAge_smooth)$r.squared)
 ```
-test
 ##BonusMalus
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
-task_BonusMalus_on_allother = as_task_regr(MPL_data_lump, target="BonusMalus")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
+task_BonusMalus_on_allother = as_task_regr(MPL_data_lump[split$train,], target="BonusMalus")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -993,7 +994,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_BonusMalus_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -1006,62 +1007,17 @@ lrn_BonusMalus_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-BonusMalus_residuals_smooth = cross_fit(task_BonusMalus_on_allother, lrn_BonusMalus_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+BonusMalus_residuals_smooth = cross_fit(task_BonusMalus_on_allother, lrn_BonusMalus_on_allother_smooth, K=5)
 
 lm_amount_on_BonusMalus_smooth = lm(amount_residuals_smooth ~ BonusMalus_residuals_smooth)
 
 results[4,] <- c(sqrt(mean(lm_amount_on_BonusMalus_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_BonusMalus_smooth)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_BonusMalus_smooth,MPL_data_lump[split$test,])),
 summary(lm_amount_on_BonusMalus_smooth)$r.squared)
-```
-##VehPrice 
-```{r}
-MPL_data_lump$VehPrice <- as.numeric(MPL_data_lump$VehPrice) #Can't have factor as a response variable
-
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("VehPrice", "ClaimAmount")))
-task_VehPrice_on_allother = as_task_regr(MPL_data_lump, target="VehPrice")$select(setdiff(names(MPL_data_lump), c("VehPrice", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehPrice_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehPrice ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehPrice_residuals_smooth = cross_fit(task_VehPrice_on_allother, lrn_VehPrice_on_allother_smooth, K=2)
-
-lm_amount_on_VehPrice_smooth = lm(amount_residuals_smooth ~ VehPrice_residuals_smooth)
-
-results[5,] <- c(sqrt(mean(lm_amount_on_VehPrice_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehPrice_smooth)),
-summary(lm_amount_on_VehPrice_smooth)$r.squared)
-
-MPL_data_lump$VehPrice <- as.factor(MPL_data_lump$VehPrice) #Making it a factor again for later
 ```
 
 ## Shapley values 
