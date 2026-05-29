@@ -31,6 +31,7 @@ library(kknn)
 library(lightgbm)
 library(Metrics)
 library(xgboost)
+library(iml)
 ```
 
 # Load data
@@ -1062,3 +1063,40 @@ summary(lm_amount_on_VehPrice_smooth)$r.squared)
 
 MPL_data_lump$VehPrice <- as.factor(MPL_data_lump$VehPrice) #Making it a factor again for later
 ```
+
+## Shapley values 
+
+```{r}
+predict_fun <- function(model,task){ 
+  Predictor$new(
+    model = model,
+    data = task$data(cols = task$feature_names),
+    y = task$data(cols = task$target_names)[[1]]
+    )
+}
+
+shapley_values <- function(model,task,new_data,n=1000){
+  Shapley$new(
+    predictor = predict_fun(model,task),
+    x.interest = new_data,
+    sample.size = n
+  )$results$phi
+}
+```
+
+Shapley values for gns_kunde
+Random forrest second model made with tuning
+```{r}
+df <- 
+  data.frame(
+    x = task$feature_names,
+    y = shapley_values(learner_rf_tuned_2,task,gns_kunde,1000)
+  )
+
+
+ggplot(df, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", title = "Gns_kunde")
+```
+
+
