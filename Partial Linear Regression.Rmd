@@ -26,17 +26,17 @@ library(Metrics)
 
 We start by making a matrix for the results we want 
 ```{r}
-results <- matrix(0, nrow=20, ncol=3)
-rownames(results) = c("LicAge", "Exposure", "RecordBeg","RecordEnd","VehAge","Gender","MariStat","SocioCateg","VehUsage","DrivAge","HasKmLimit","BonusMalus","VehBody","VehPrice","VehEngine","VehEnergy","VehMaxSpeed","VehClass","RiskVar","Garage")
+results <- matrix(0, nrow=4, ncol=3)
+rownames(results) = c("LicAge", "Exposure","DrivAge","BonusMalus","VehPrice")
 colnames(results) = c("regr.rmse", "regr.mae", "regr.rsq")
 ```
 
-Now we make a model for each coefficient, where we focus on one off the coefficients and put all of the other together.
+Now we make a model for each of our five chosen coefficient, where we focus on one off the coefficients and put all of the other together.
 
-## LicAge
+##LicAge
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("LicAge", "ClaimAmount")))
-task_LicAge_on_allother = as_task_regr(MPL_data_lump, target="LicAge")$select(setdiff(names(freMPL), c("LicAge", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
+task_LicAge_on_allother = as_task_regr(MPL_data_lump[split$train,], target="LicAge")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -49,7 +49,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_LicAge_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -62,7 +62,7 @@ lrn_LicAge_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
 cross_fit = function(task, learner, K){
@@ -73,19 +73,19 @@ cross_fit = function(task, learner, K){
   pred$truth - pred$response
 }
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-LicAge_residuals_smooth = cross_fit(task_LicAge_on_allother, lrn_LicAge_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+LicAge_residuals_smooth = cross_fit(task_LicAge_on_allother, lrn_LicAge_on_allother_smooth, K=5)
 
 lm_amount_on_LicAge_smooth = lm(amount_residuals_smooth ~ LicAge_residuals_smooth)
 
 results[1,] <- c(sqrt(mean(lm_amount_on_LicAge_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_LicAge_smooth)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_LicAge_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_LicAge_smooth)$r.squared)
 ```
 ##Exposure 
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("Exposure", "ClaimAmount")))
-task_Exposure_on_allother = as_task_regr(MPL_data_lump, target="Exposure")$select(setdiff(names(freMPL), c("Exposure", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
+task_Exposure_on_allother = as_task_regr(MPL_data_lump[split$train,], target="Exposure")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -98,7 +98,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_Exposure_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -111,309 +111,22 @@ lrn_Exposure_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-Exposure_residuals_smooth = cross_fit(task_Exposure_on_allother, lrn_Exposure_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+Exposure_residuals_smooth = cross_fit(task_Exposure_on_allother, lrn_Exposure_on_allother_smooth, K=5)
 
 lm_amount_on_Exposure_smooth = lm(amount_residuals_smooth ~ Exposure_residuals_smooth)
 
 results[2,] <- c(sqrt(mean(lm_amount_on_Exposure_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_Exposure_smooth)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_Exposure_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_Exposure_smooth)$r.squared)
-```
-##RecordBeg 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("RecordBeg", "ClaimAmount")))
-task_RecordBeg_on_allother = as_task_regr(MPL_data_lump, target="RecordBeg")$select(setdiff(names(freMPL), c("RecordBeg", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_RecordBeg_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=RecordBeg ~ LicAge + Exposure + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-RecordBeg_residuals_smooth = cross_fit(task_RecordBeg_on_allother, lrn_RecordBeg_on_allother_smooth, K=2)
-
-lm_amount_on_RecordBeg_smooth = lm(amount_residuals_smooth ~ RecordBeg_residuals_smooth)
-
-results[3,] <- c(sqrt(mean(lm_amount_on_RecordBeg_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_RecordBeg_smooth)),
-summary(lm_amount_on_RecordBeg_smooth)$r.squared)
-```
-##RecordEnd
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("RecordEnd", "ClaimAmount")))
-task_RecordEnd_on_allother = as_task_regr(MPL_data_lump, target="RecordEnd")$select(setdiff(names(freMPL), c("RecordEnd", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_RecordEnd_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=RecordEnd ~ LicAge + Exposure + RecordBeg + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-RecordEnd_residuals_smooth = cross_fit(task_RecordEnd_on_allother, lrn_RecordEnd_on_allother_smooth, K=2)
-
-lm_amount_on_RecordEnd_smooth = lm(amount_residuals_smooth ~ RecordEnd_residuals_smooth)
-
-results[4,] <- c(sqrt(mean(lm_amount_on_RecordEnd_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_RecordEnd_smooth)),
-summary(lm_amount_on_RecordEnd_smooth)$r.squared)
-```
-##VehAge
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehAge", "ClaimAmount")))
-task_VehAge_on_allother = as_task_regr(MPL_data_lump, target="VehAge")$select(setdiff(names(freMPL), c("VehAge", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehAge_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehAge ~ LicAge + Exposure + RecordBeg + RecordEnd + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehAge_residuals_smooth = cross_fit(task_VehAge_on_allother, lrn_VehAge_on_allother_smooth, K=2)
-
-lm_amount_on_VehAge_smooth = lm(amount_residuals_smooth ~ VehAge_residuals_smooth)
-
-results[5,] <- c(sqrt(mean(lm_amount_on_VehAge_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehAge_smooth)),
-summary(lm_amount_on_VehAge_smooth)$r.squared)
-```
-##Gender 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("Gender", "ClaimAmount")))
-task_Gender_on_allother = as_task_regr(MPL_data_lump, target="Gender")$select(setdiff(names(freMPL), c("Gender", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_Gender_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=Gender ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-Gender_residuals_smooth = cross_fit(task_Gender_on_allother, lrn_Gender_on_allother_smooth, K=2)
-
-lm_amount_on_Gender_smooth = lm(amount_residuals_smooth ~ Gender_residuals_smooth)
-
-results[6,] <- c(sqrt(mean(lm_amount_on_Gender_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_Gender_smooth)),
-summary(lm_amount_on_Gender_smooth)$r.squared)
-```
-##MariStat 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("MariStat", "ClaimAmount")))
-task_MariStat_on_allother = as_task_regr(MPL_data_lump, target="MariStat")$select(setdiff(names(freMPL), c("MariStat", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_MariStat_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=MariStat ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-MariStat_residuals_smooth = cross_fit(task_MariStat_on_allother, lrn_MariStat_on_allother_smooth, K=2)
-
-lm_amount_on_MariStat_smooth = lm(amount_residuals_smooth ~ MariStat_residuals_smooth)
-
-results[7,] <- c(sqrt(mean(lm_amount_on_MariStat_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_MariStat_smooth)),
-summary(lm_amount_on_MariStat_smooth)$r.squared)
-```
-##SocioCateg
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("SocioCateg", "ClaimAmount")))
-task_SocioCateg_on_allother = as_task_regr(MPL_data_lump, target="SocioCateg")$select(setdiff(names(freMPL), c("SocioCateg", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_SocioCateg_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=SocioCateg ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-SocioCateg_residuals_smooth = cross_fit(task_SocioCateg_on_allother, lrn_SocioCateg_on_allother_smooth, K=2)
-
-lm_amount_on_SocioCateg_smooth = lm(amount_residuals_smooth ~ SocioCateg_residuals_smooth)
-
-results[8,] <- c(sqrt(mean(lm_amount_on_SocioCateg_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_SocioCateg_smooth)),
-summary(lm_amount_on_SocioCateg_smooth)$r.squared)
-```
-##VehUsage
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehUsage", "ClaimAmount")))
-task_VehUsage_on_allother = as_task_regr(MPL_data_lump, target="VehUsage")$select(setdiff(names(freMPL), c("VehUsage", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehUsage_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehUsage ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehUsage_residuals_smooth = cross_fit(task_VehUsage_on_allother, lrn_VehUsage_on_allother_smooth, K=2)
-
-lm_amount_on_VehUsage_smooth = lm(amount_residuals_smooth ~ VehUsage_residuals_smooth)
-
-results[9,] <- c(sqrt(mean(lm_amount_on_VehUsage_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehUsage_smooth)),
-summary(lm_amount_on_VehUsage_smooth)$r.squared)
 ```
 ##DrivAge
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("DrivAge", "ClaimAmount")))
-task_DrivAge_on_allother = as_task_regr(MPL_data_lump, target="DrivAge")$select(setdiff(names(freMPL), c("DrivAge", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
+task_DrivAge_on_allother = as_task_regr(MPL_data_lump[split$train,], target="DrivAge")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -426,7 +139,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_DrivAge_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -439,63 +152,22 @@ lrn_DrivAge_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-DrivAge_residuals_smooth = cross_fit(task_DrivAge_on_allother, lrn_DrivAge_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+DrivAge_residuals_smooth = cross_fit(task_DrivAge_on_allother, lrn_DrivAge_on_allother_smooth, K=5)
 
 lm_amount_on_DrivAge_smooth = lm(amount_residuals_smooth ~ DrivAge_residuals_smooth)
 
-results[10,] <- c(sqrt(mean(lm_amount_on_DrivAge_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_DrivAge_smooth)),
+results[3,] <- c(sqrt(mean(lm_amount_on_DrivAge_smooth$residuals^2)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_DrivAge_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_DrivAge_smooth)$r.squared)
-```
-##HasKmLimit 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("HasKmLimit", "ClaimAmount")))
-task_HasKmLimit_on_allother = as_task_regr(MPL_data_lump, target="HasKmLimit")$select(setdiff(names(freMPL), c("HasKmLimit", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_HasKmLimit_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=HasKmLimit ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-HasKmLimit_residuals_smooth = cross_fit(task_HasKmLimit_on_allother, lrn_HasKmLimit_on_allother_smooth, K=2)
-
-lm_amount_on_HasKmLimit_smooth = lm(amount_residuals_smooth ~ HasKmLimit_residuals_smooth)
-
-results[11,] <- c(sqrt(mean(lm_amount_on_HasKmLimit_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_HasKmLimit_smooth)),
-summary(lm_amount_on_HasKmLimit_smooth)$r.squared)
 ```
 ##BonusMalus
 ```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("BonusMalus", "ClaimAmount")))
-task_BonusMalus_on_allother = as_task_regr(MPL_data_lump, target="BonusMalus")$select(setdiff(names(freMPL), c("BonusMalus", "ClaimAmount")))
+task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
+task_BonusMalus_on_allother = as_task_regr(MPL_data_lump[split$train,], target="BonusMalus")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
 
 lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -508,7 +180,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 lrn_BonusMalus_on_allother_smooth = auto_tuner(
   tnr("random_search"),
@@ -521,343 +193,15 @@ lrn_BonusMalus_on_allother_smooth = auto_tuner(
   ),
   measure = msr("regr.mse"),
   resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
+  terminator = trm("evals", n_evals=20)
 )
 
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-BonusMalus_residuals_smooth = cross_fit(task_BonusMalus_on_allother, lrn_BonusMalus_on_allother_smooth, K=2)
+amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=5)
+BonusMalus_residuals_smooth = cross_fit(task_BonusMalus_on_allother, lrn_BonusMalus_on_allother_smooth, K=5)
 
 lm_amount_on_BonusMalus_smooth = lm(amount_residuals_smooth ~ BonusMalus_residuals_smooth)
 
-results[12,] <- c(sqrt(mean(lm_amount_on_BonusMalus_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_BonusMalus_smooth)),
+results[4,] <- c(sqrt(mean(lm_amount_on_BonusMalus_smooth$residuals^2)),
+mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_BonusMalus_smooth,MPL_data_lump[split$test,])),
 summary(lm_amount_on_BonusMalus_smooth)$r.squared)
-```
-##VehBody
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehBody", "ClaimAmount")))
-task_VehBody_on_allother = as_task_regr(MPL_data_lump, target="VehBody")$select(setdiff(names(freMPL), c("VehBody", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehBody_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehBody ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehBody_residuals_smooth = cross_fit(task_VehBody_on_allother, lrn_VehBody_on_allother_smooth, K=2)
-
-lm_amount_on_VehBody_smooth = lm(amount_residuals_smooth ~ VehBody_residuals_smooth)
-
-results[13,] <- c(sqrt(mean(lm_amount_on_VehBody_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehBody_smooth)),
-summary(lm_amount_on_VehBody_smooth)$r.squared)
-```
-##VehPrice 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehPrice", "ClaimAmount")))
-task_VehPrice_on_allother = as_task_regr(MPL_data_lump, target="VehPrice")$select(setdiff(names(freMPL), c("VehPrice", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehPrice_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehPrice ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehPrice_residuals_smooth = cross_fit(task_VehPrice_on_allother, lrn_VehPrice_on_allother_smooth, K=2)
-
-lm_amount_on_VehPrice_smooth = lm(amount_residuals_smooth ~ VehPrice_residuals_smooth)
-
-results[14,] <- c(sqrt(mean(lm_amount_on_VehPrice_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehPrice_smooth)),
-summary(lm_amount_on_VehPrice_smooth)$r.squared)
-```
-##VehEngine
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehEngine", "ClaimAmount")))
-task_VehEngine_on_allother = as_task_regr(MPL_data_lump, target="VehEngine")$select(setdiff(names(freMPL), c("VehEngine", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VePrice+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehEngine_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehEngine ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehEngine_residuals_smooth = cross_fit(task_VehEngine_on_allother, lrn_VehEngine_on_allother_smooth, K=2)
-
-lm_amount_on_VehEngine_smooth = lm(amount_residuals_smooth ~ VehEngine_residuals_smooth)
-
-results[15,] <- c(sqrt(mean(lm_amount_on_VehEngine_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehEngine_smooth)),
-summary(lm_amount_on_VehEngine_smooth)$r.squared)
-```
-##VehEnergy
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehEnergy", "ClaimAmount")))
-task_VehEnergy_on_allother = as_task_regr(MPL_data_lump, target="VehEnergy")$select(setdiff(names(freMPL), c("VehEnergy", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VePrice+VehEngine+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehEnergy_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehEnergy ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice+VehEngine+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehEnergy_residuals_smooth = cross_fit(task_VehEnergy_on_allother, lrn_VehEnergy_on_allother_smooth, K=2)
-
-lm_amount_on_VehEnergy_smooth = lm(amount_residuals_smooth ~ VehEnergy_residuals_smooth)
-
-results[16,] <- c(sqrt(mean(lm_amount_on_VehEnergy_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehEnergy_smooth)),
-summary(lm_amount_on_VehEnergy_smooth)$r.squared)
-```
-##VehMaxSpeed
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehMaxSpeed", "ClaimAmount")))
-task_VehMaxSpeed_on_allother = as_task_regr(MPL_data_lump, target="VehMaxSpeed")$select(setdiff(names(freMPL), c("VehMaxSpeed", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VePrice+VehEngine+VehEnergy + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehMaxSpeed_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehMaxSpeed ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice+VehEngine+VehEnergy + VehClass + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehMaxSpeed_residuals_smooth = cross_fit(task_VehMaxSpeed_on_allother, lrn_VehMaxSpeed_on_allother_smooth, K=2)
-
-lm_amount_on_VehMaxSpeed_smooth = lm(amount_residuals_smooth ~ VehMaxSpeed_residuals_smooth)
-
-results[17,] <- c(sqrt(mean(lm_amount_on_VehMaxSpeed_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehMaxSpeed_smooth)),
-summary(lm_amount_on_VehMaxSpeed_smooth)$r.squared)
-```
-##VehClass 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("VehClass", "ClaimAmount")))
-task_VehClass_on_allother = as_task_regr(MPL_data_lump, target="VehClass")$select(setdiff(names(freMPL), c("VehClass", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VePrice+VehEngine+VehEnergy + VehMaxSpeed + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_VehClass_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=VehClass ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice+VehEngine+VehEnergy + VehMaxSpeed + s(RiskVar) + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-VehClass_residuals_smooth = cross_fit(task_VehClass_on_allother, lrn_VehClass_on_allother_smooth, K=2)
-
-lm_amount_on_VehClass_smooth = lm(amount_residuals_smooth ~ VehClass_residuals_smooth)
-
-results[18,] <- c(sqrt(mean(lm_amount_on_VehClass_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_VehClass_smooth)),
-summary(lm_amount_on_VehClass_smooth)$r.squared)
-```
-##RiskVar 
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("RiskVar", "ClaimAmount")))
-task_RiskVar_on_allother = as_task_regr(MPL_data_lump, target="RiskVar")$select(setdiff(names(freMPL), c("RiskVar", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VePrice+VehEngine+VehEnergy + VehMaxSpeed + VehClass + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_RiskVar_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=RiskVar ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice+VehEngine+VehEnergy + VehMaxSpeed + VehClass + Garage,
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-RiskVar_residuals_smooth = cross_fit(task_RiskVar_on_allother, lrn_RiskVar_on_allother_smooth, K=2)
-
-lm_amount_on_RiskVar_smooth = lm(amount_residuals_smooth ~ RiskVar_residuals_smooth)
-
-results[19,] <- c(sqrt(mean(lm_amount_on_RiskVar_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_RiskVar_smooth)),
-summary(lm_amount_on_RiskVar_smooth)$r.squared)
-```
-##Garage
-```{r}
-task_amount_on_allother = as_task_regr(MPL_data_lump, target="ClaimAmount")$select(setdiff(names(freMPL), c("Garage", "ClaimAmount")))
-task_Garage_on_allother = as_task_regr(MPL_data_lump, target="Garage")$select(setdiff(names(freMPL), c("Garage", "ClaimAmount")))
-
-lrn_amount_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VePrice+VehEngine+VehEnergy + VehMaxSpeed + VehClass + s(RiskVar),
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-lrn_Garage_on_allother_smooth = auto_tuner(
-  tnr("random_search"),
-  lrn(
-    "regr.gam",
-    formula=Garage ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice+VehEngine+VehEnergy + VehMaxSpeed + VehClass + s(RiskVar),
-    gamma = to_tune(1,1e3,logscale=TRUE),
-    select = to_tune(c(TRUE, FALSE)),
-    drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
-  ),
-  measure = msr("regr.mse"),
-  resampling = rsmp("cv", folds=2),
-  terminator = trm("evals", n_evals=10)
-)
-
-amount_residuals_smooth = cross_fit(task_amount_on_allother, lrn_amount_on_allother_smooth, K=2)
-Garage_residuals_smooth = cross_fit(task_Garage_on_allother, lrn_Garage_on_allother_smooth, K=2)
-
-lm_amount_on_Garage_smooth = lm(amount_residuals_smooth ~ Garage_residuals_smooth)
-
-results[20,] <- c(sqrt(mean(lm_amount_on_Garage_smooth$residuals^2)),
-mae(MPL_data_lump$ClaimAmount, predict(lm_amount_on_Garage_smooth)),
-summary(lm_amount_on_Garage_smooth)$r.squared)
 ```
