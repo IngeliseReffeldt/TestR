@@ -1123,4 +1123,76 @@ plot(pdps)
 plot(ales)
 ```
 
+## Sensitive or protected features - Gender
+A random forrest with same parameter tuning as above, but this time without gender
+```{r}
+MPL_no_gender <- subset(MPL_data_lump, select = -Gender)
+task_no_gender <- as_task_regr(MPL_no_gender, target = "ClaimAmount")
+```
+
+
+```{r}
+learner_rf_tuned_no_gender <- as_learner(
+  po("encode", method = "one-hot") %>>%
+    lrn("regr.ranger",
+                importance = "impurity",
+                predict_type = "response",
+                num.trees = to_tune(c(500:1500)),
+                min.node.size = to_tune(c(100:2000)),
+                mtry = to_tune(c(2:12)),
+                sample.fraction = to_tune(p_dbl(lower = 0.5, upper = 1))
+                )
+)
+```
+
+```{r}
+at_rf_no_gender <- auto_tuner(
+  tuner = tnr("random_search"),
+  learner = learner_rf_tuned_no_gender,
+  resampling = rsmp("cv", folds = 5),
+  measure = msr("regr.rmse"),
+  terminator = trm("evals", n_evals = 25)
+)
+```
+
+```{r}
+at_rf_no_gender$train(task_no_gender, row_ids = train_set)
+```
+
+```{r}
+at_rf_no_gender$tuning_result
+```
+
+```{r}
+pred_tuned_no_gender <- at_rf_no_gender$predict(task_no_gender, row_ids = test_set)
+
+pred_tuned_no_gender$score(list(
+  msr("regr.rmse"),
+  msr("regr.mae"),
+  msr("regr.rsq")
+))
+```
+
+Shapley, PDP, ALE 
+```{r}
+gns_kunde_no_gender <- gns_kunde[,-6] # Remove gender from gns_kunde
+
+df_no_gender <- 
+  data.frame(
+    x = task_no_gender$feature_names,
+    y = shapley_values(learner_rf_tuned_no_gender,task_no_gender,gns_kunde_no_gender,1000)
+  )
+
+ggplot(df, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", title = "Gns_kunde, no gender")
+
+explainer_no_gender <- explainer_fun(learner_rf_tuned_no_gender, task_no_gender)
+
+pdps_no_gender <- model_profile(explainer_no_gender, type="partial")
+ales_no_gender <- model_profile(explainer_no_gender, type="accumulated")
+
+plot(pdps_no_gender)
+plot(ales_no_gender)
+```
 
