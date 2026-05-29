@@ -1298,6 +1298,7 @@ sv_importance(sv, kind = "beeswarm")
 ```
 
 ### nyt 
+her der det nye
 
 ```{r}
 categorical_selector = selector_type(c("factor", "ordered"))
