@@ -1189,6 +1189,28 @@ plot(pdps)
 plot(ales)
 ```
 
+```{r}
+# PDP for Gender
+pdp_gender <- model_profile(
+  explainer,
+  variables = "Gender",
+  type = "partial"
+)
+
+plot(pdp_gender)
+```
+
+```{r}
+# ALE for Gender
+ale_gender <- model_profile(
+  explainer,
+  variables = "Gender",
+  type = "accumulated"
+)
+
+plot(ale_gender)
+```
+
 ## Sensitive or protected features - Gender
 A random forrest with same parameter tuning as above, but this time without gender
 ```{r}
