@@ -177,74 +177,119 @@ pred_baseline$score(msr("regr.mae"))
 pred_baseline$score(msr("regr.rsq"))
 ```
 
-##### Tree
+#### RIDGE and LASSO 
 
+```{r}
+ridgereg = make_encoded_learner(lrn("regr.glmnet", alpha = 0))
+lassoreg = make_encoded_learner(lrn("regr.glmnet", alpha = 1))
+
+ridgereg$train(task, row_ids = split$train)
+lassoreg$train(task, row_ids = split$train)
+
+ridgereg$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
+lassoreg$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
+
+elasticnet_lrn = make_encoded_learner(lrn("regr.glmnet", 
+                                          alpha = to_tune(0, 1), 
+                                          lambda = to_tune(p_dbl(log(1e-5), log(1e1), trafo = exp))))
+instance = tune(
+  tuner = tnr("random_search", batch_size=20), ### tuning method
+  task = task$clone()$filter(split$train),
+  learner = elasticnet_lrn,
+  resampling = rsmp("cv", folds = 5), #### resampling method: 5-fold cross validation
+  measures = msrs(c("regr.rmse", "regr.mae", "regr.rsq")),
+  terminator = trm("evals", n_evals = 20) #### terminator
+)
+
+as.data.table(instance$archive$data)
+instance$result_learner_param_vals
+instance$result_y # messures results
+
+# result on test set
+elasticnet_lrn$param_set$values = instance$result_learner_param_vals[[1]]
+elasticnet_lrn$train(task$clone()$filter(split$train))
+elasticnet_lrn$predict(task$clone()$filter(split$test))$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
+```
+
+#### GAM 
+
+```{r}
+# Simple GAM model - no tuning 
+lrn_gam = make_encoded_learner(lrn("regr.gam"))
+lrn_gam$train(task, row_ids = split$train)
+lrn_gam$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
+
+# Autotuning 
+lrn_gam_t = lrn_gam = make_encoded_learner(lrn("regr.gam",
+                                               gamma = to_tune(1,1e3,logscale=TRUE),
+                                               select = to_tune(c(TRUE, FALSE)),
+                                               drop.unused.levels=FALSE)) # Default is TRUE, but this may cause errors if splits are unlucky
+
+lrn_gam_tune = auto_tuner(
+  tuner = tnr("random_search"),
+  learner = lrn_gam_t,
+  measure = msr("regr.rmse"),
+  resampling = rsmp("cv", folds=5),
+  terminator = trm("evals", n_evals=20)
+)
+
+lrn_gam_tune$train(task, row_ids = train_set)
+lrn_gam_tune$tuning_result
+lrn_gam_tune$predict(task, row_ids = test_set)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
+```
+
+
+#### Tree
+
+Default tree
+```{r}
+lrn_tree = lrn("regr.rpart")
+lrn_tree$train(task, row_ids = split$train)
+
+plot(lrn_tree$model, compress = TRUE, margin = 0.1)
+text(lrn_tree$model, use.n = TRUE, cex = 0.7)
+
+lrn_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
+```
+
+Encoded tree 
 ```{r}
 categorical_selector = selector_type(c("factor", "ordered"))
 
 make_encoded_learner = function(learner) {
   as_learner(
-    po("colapply", applicator = as.factor, affect_columns = selector_type("character")) %>>%
-      po("datefeatures") %>>%
-      po("encode", method = "treatment",
-         affect_columns = categorical_selector, id = "binary_enc") %>>%
-      learner
+    po("encode", method = "treatment") %>>%
+    learner
   )
 }
+
+lrn_tree_encoded = make_encoded_learner(lrn("regr.rpart"))
+lrn_tree_encoded$train(task, row_ids = split$train)
+
+plot(lrn_tree_encoded$model$regr.rpart$model, compress = TRUE, margin = 0.1)
+text(lrn_tree_encoded$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
+
+lrn_tree_encoded$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
 ```
 
-Defult tree
+Full and pruned tree
 ```{r}
-lrn_tree = make_encoded_learner(lrn("regr.rpart"))
-lrn_tree$train(task, row_ids = split$train)
-
-plot(lrn_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
-text(lrn_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.7)
-
-lrn_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
-```
-
-Define learner - full tree
-```{r}
-full_tree = make_encoded_learner(lrn("regr.rpart", cp = 0))
+full_tree = make_encoded_learner(lrn("regr.rpart", cp = 0, xval = 5))
 full_tree$train(task, row_ids = split$train)
+full_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
 
-plot(full_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
-text(full_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.2)
-
-full_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
-```
-
-Optimal cp
-```{r}
-graph_learner_cart_cv = make_encoded_learner(lrn("regr.rpart", cp = 0, xval = 5))
-graph_learner_cart_cv$train(task, row_ids = split$train)
-
-cart_trained_cv <- graph_learner_cart_cv$model$regr.rpart$model
-
-rpart::plotcp(cart_trained_cv)
-rpart::printcp(cart_trained_cv)
-
-cp_table = cart_trained_cv$cptable
+cp_table = full_tree$model$regr.rpart$model$cptable
 min_row = which.min(cp_table[, "xerror"])
 one_se_threshold = cp_table[min_row, "xerror"] + cp_table[min_row, "xstd"]
 
 selected_row = which(cp_table[, "xerror"] <= one_se_threshold)[1]
 selected_cp = cp_table[selected_row, "CP"]
 selected_cp
-```
 
-```{r}
-selected_cp
-pruned_tree = make_encoded_learner(lrn("regr.rpart", cp = 0.02459138))
+pruned_tree = make_encoded_learner(lrn("regr.rpart", cp = selected_cp, xval = 5))
 pruned_tree$train(task, row_ids = split$train)
-
-plot(pruned_tree$model$regr.rpart$model, compress = TRUE, margin = 0.1)
-text(pruned_tree$model$regr.rpart$model, use.n = TRUE, cex = 0.5)
-
-pruned_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.mse","regr.rmse")))
+pruned_tree$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
 ```
-
 
 ##### DEFINING KNN MODEL #####
 
