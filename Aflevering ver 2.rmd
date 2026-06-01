@@ -32,6 +32,8 @@ library(lightgbm)
 library(Metrics)
 library(xgboost)
 library(iml)
+library(DALEX)
+library(DALEXtra)
 ```
 
 # Load data
@@ -100,7 +102,7 @@ summary(MPL_data_lump)
 # Generisk kunde 1: 
 Gennemsnits kunde
 ```{r}
-gns_kunde <- MPL_data_lump[1,]
+gns_kunde <- subset(MPL_data_lump[1,], select = -ClaimAmount)
 
 gns_kunde$Exposure <- 1  
 gns_kunde$LicAge <- as.numeric(as.integer(mean(MPL_data_lump$LicAge)))
@@ -117,7 +119,7 @@ gns_kunde$SocioCateg <- factor(names(sort(table(MPL_data_lump$SocioCateg), decre
 gns_kunde$VehUsage <- factor(names(sort(table(MPL_data_lump$VehUsage), decreasing = TRUE))[1],
                              levels = levels(MPL_data_lump$VehUsage))
 gns_kunde$DrivAge <- as.numeric(as.integer(mean(MPL_data_lump$DrivAge)))
-gns_kunde$HasKmLimit <- as.numeric(names(sort(table(MPL_data_lump$HasKmLimit), decreasing = TRUE))[1])
+gns_kunde$HasKmLimit <- factor(names(sort(table(MPL_data_lump$HasKmLimit), decreasing = TRUE))[1])
 gns_kunde$BonusMalus <- as.numeric(as.integer(mean(MPL_data_lump$BonusMalus)))
 gns_kunde$VehBody <- factor(names(sort(table(MPL_data_lump$VehBody), decreasing = TRUE))[1],
                             levels = levels(MPL_data_lump$VehBody))
@@ -131,7 +133,7 @@ gns_kunde$VehMaxSpeed <- factor(names(sort(table(MPL_data_lump$VehMaxSpeed), dec
                                 levels = levels(MPL_data_lump$VehMaxSpeed))
 gns_kunde$VehClass <- factor(names(sort(table(MPL_data_lump$VehClass), decreasing = TRUE))[1],
                              levels = levels(MPL_data_lump$VehClass))
-gns_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
+# gns_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
 gns_kunde$RiskVar <- as.numeric(as.integer(mean(MPL_data_lump$RiskVar)))
 gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = TRUE))[1],
                            levels = levels(MPL_data_lump$Garage))
@@ -139,6 +141,31 @@ gns_kunde$Garage <- factor(names(sort(table(MPL_data_lump$Garage), decreasing = 
 
 # Generisk kunde 2: 
 Ekstrem kunde
+```{r}
+eks_kunde <- subset(MPL_data_lump[1,], select = -ClaimAmount)
+
+eks_kunde$Exposure <- 1  
+eks_kunde$LicAge <- as.numeric(60)
+eks_kunde$RecordBeg <- as.Date("2004-01-01")
+eks_kunde$RecordEnd <- as.Date("2005-01-01")
+eks_kunde$VehAge <- factor("0")
+eks_kunde$Gender <- factor("Male")
+eks_kunde$MariStat <- factor("Alone")
+eks_kunde$SocioCateg <- factor("CSP50")
+eks_kunde$VehUsage <- factor("Private+trip to office")
+eks_kunde$DrivAge <- as.numeric(30)
+eks_kunde$BonusMalus <- as.numeric(120)
+eks_kunde$VehBody <- factor("sport utility vehicle")
+eks_kunde$VehPrice <- factor("V")
+eks_kunde$VehEngine <- factor("direct injection overpowered")
+eks_kunde$VehEnergy <- factor("diesel")
+eks_kunde$VehMaxSpeed <- factor("190-200 km/h")
+eks_kunde$VehClass <- factor("H")
+# eks_kunde$ClaimAmount <- mean(MPL_data_lump$ClaimAmount)
+eks_kunde$RiskVar <- as.numeric(20)
+eks_kunde$Garage <- factor("Collective garage")
+```
+
 
 #### TASK and SPLIT 
 
@@ -1098,17 +1125,45 @@ shapley_values <- function(model,task,new_data,n=1000){
 Shapley values for gns_kunde
 Random forrest second model made with tuning
 ```{r}
-df <- 
+df_shapley_values <- 
   data.frame(
     x = task$feature_names,
-    y = shapley_values(learner_rf_tuned_2,task,gns_kunde,1000)
+    y = shapley_values(at_rf_2,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
   )
 
-
-ggplot(df, aes(x=y,y=x)) +
+ggplot(df_shapley_values, aes(x=y,y=x)) +
   geom_col() +
-  labs(x="Shapley Value", y = "Feature", title = "Gns_kunde")
+  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: Random Forrest")
 ```
+
+Shapley values for gns_kunde
+LightGBM model made with tuning
+```{r}
+df_shapley_values_lgbm <- 
+  data.frame(
+    x = task$feature_names,
+    y = shapley_values(at_lgb_2,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
+  )
+
+ggplot(df_shapley_values_lgbm, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: LightGBM")
+```
+
+Shapley values for gns_kunde
+NN model made with tuning
+```{r}
+df_shapley_values_NN <- 
+  data.frame(
+    x = task$feature_names,
+    y = shapley_values(learner_nn,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
+  )
+
+ggplot(df_shapley_values_NN, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", title = "Average customer")
+```
+
 
 ## PDP and ALE
 
@@ -1125,10 +1180,10 @@ explainer_fun <- function(learner_trained, task){
 
 PDP and ALE for random forrest
 ```{r}
-explainer <- explainer_fun(learner_rf_tuned_2, task)
+explainer <- explainer_fun(at_rf_2, task)
 
-pdps <- model_profile(explainer, type="partial")
-ales <- model_profile(explainer, type="accumulated")
+pdps <- DALEX::model_profile(explainer, type="partial")
+ales <- DALEX::model_profile(explainer, type="accumulated")
 
 plot(pdps)
 plot(ales)
@@ -1191,14 +1246,18 @@ gns_kunde_no_gender <- gns_kunde[,-6] # Remove gender from gns_kunde
 df_no_gender <- 
   data.frame(
     x = task_no_gender$feature_names,
-    y = shapley_values(learner_rf_tuned_no_gender,task_no_gender,gns_kunde_no_gender,1000)
+    y = shapley_values(at_rf_no_gender,
+                       task_no_gender,
+                       as.data.frame(gns_kunde_no_gender[, task_no_gender$feature_names]),
+                       1000)
   )
 
-ggplot(df, aes(x=y,y=x)) +
+ggplot(df_no_gender, aes(x=y,y=x)) +
   geom_col() +
-  labs(x="Shapley Value", y = "Feature", title = "Gns_kunde, no gender")
+  labs(x="Shapley Value", y = "Feature", 
+       title = "Gns_kunde, no gender, Model: Random Forrest")
 
-explainer_no_gender <- explainer_fun(learner_rf_tuned_no_gender, task_no_gender)
+explainer_no_gender <- explainer_fun(at_rf_no_gender, task_no_gender)
 
 pdps_no_gender <- model_profile(explainer_no_gender, type="partial")
 ales_no_gender <- model_profile(explainer_no_gender, type="accumulated")
