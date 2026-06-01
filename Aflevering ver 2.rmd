@@ -1190,25 +1190,38 @@ plot(ales)
 ```
 
 ```{r}
-# PDP for Gender
-pdp_gender <- model_profile(
+# PDP for Categoricals
+pdp_categ <- model_profile(
   explainer,
-  variables = "Gender",
+  variables = c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass"),
   type = "partial"
 )
 
-plot(pdp_gender)
+plot(pdp_categ) +
+  theme(
+    axis.text.x = element_text(
+      angle = 90,
+      hjust = 1
+    )
+  )
 ```
 
+
 ```{r}
-# ALE for Gender
-ale_gender <- model_profile(
+# ALE for Categoricals
+ale_categ <- model_profile(
   explainer,
-  variables = "Gender",
+  variables = c("VehAge", "Gender", "MariStat", "SocioCateg", "VehUsage", "VehBody", "VehPrice", "VehEngine", "VehEnergy", "VehMaxSpeed", "VehClass"),
   type = "accumulated"
 )
 
-plot(ale_gender)
+plot(ale_categ) +
+  theme(
+    axis.text.x = element_text(
+      angle = 90,
+      hjust = 1
+    )
+  )
 ```
 
 ## Sensitive or protected features - Gender
