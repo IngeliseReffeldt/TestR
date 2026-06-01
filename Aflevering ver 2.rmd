@@ -180,6 +180,15 @@ pred_baseline$score(msr("regr.rsq"))
 #### RIDGE and LASSO 
 
 ```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("encode", method = "treatment") %>>%
+    learner
+  )
+}
+
 ridgereg = make_encoded_learner(lrn("regr.glmnet", alpha = 0))
 lassoreg = make_encoded_learner(lrn("regr.glmnet", alpha = 1))
 
@@ -214,6 +223,15 @@ elasticnet_lrn$predict(task$clone()$filter(split$test))$score(msrs(c("regr.rmse"
 #### GAM 
 
 ```{r}
+categorical_selector = selector_type(c("factor", "ordered"))
+
+make_encoded_learner = function(learner) {
+  as_learner(
+    po("encode", method = "treatment") %>>%
+    learner
+  )
+}
+
 # Simple GAM model - no tuning 
 lrn_gam = make_encoded_learner(lrn("regr.gam"))
 lrn_gam$train(task, row_ids = split$train)
