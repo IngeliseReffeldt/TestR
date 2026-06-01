@@ -383,14 +383,6 @@ pred_knn$score(msr("regr.rsq"))
 ##### DEFAULT RF MODEL #####
 
 ```{r}
-task_rf <- TaskRegr$new(
-  id = "claim_rf",
-  backend = MPL_data_lump,
-  target = "ClaimAmount"
-)
-```
-
-```{r}
 learner_rf <- lrn(
   "regr.ranger",             #ranger implements Random Forest
   importance = "impurity",
