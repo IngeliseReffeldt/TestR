@@ -1251,96 +1251,47 @@ plot(ale_categ) +
 ```
 
 ## Sensitive or protected features - Gender
-A random forrest with same parameter tuning as above, but this time without gender
 ```{r}
-MPL_no_gender <- subset(MPL_data_lump, select = -Gender)
-task_no_gender <- as_task_regr(MPL_no_gender, target = "ClaimAmount")
+test_data <- MPL_data_lump[test_set, ]
+
+test_male   <- test_data
+test_female <- test_data
+
+test_male$Gender   <- "Male"
+test_female$Gender <- "Female"
 ```
 
+```{r}
+pred_male <- at_rf_2$learner$predict_newdata(test_male)
+
+pred_female <- at_rf_2$learner$predict_newdata(test_female)
+```
 
 ```{r}
-learner_rf_tuned_no_gender <- as_learner(
-  po("encode", method = "one-hot") %>>%
-    lrn("regr.ranger",
-                importance = "impurity",
-                predict_type = "response",
-                num.trees = to_tune(c(500:1500)),
-                min.node.size = to_tune(c(100:2000)),
-                mtry = to_tune(c(2:12)),
-                sample.fraction = to_tune(p_dbl(lower = 0.5, upper = 1))
-                )
+pred_fair <- (pred_male$response +
+              pred_female$response) / 2
+```
+
+```{r}
+y_true <- test_data$ClaimAmount
+```
+
+```{r}
+rmse_fair <- sqrt(mean((y_true - pred_fair)^2))
+
+mae_fair <- mean(abs(y_true - pred_fair))
+
+rsq_fair <- 1 -
+  sum((y_true - pred_fair)^2) /
+  sum((y_true - mean(y_true))^2)
+
+results_fair <- data.frame(
+  Model = "RF Fair",
+  RMSE = rmse_fair,
+  MAE  = mae_fair,
+  RSQ  = rsq_fair
 )
-```
 
-```{r}
-at_rf_no_gender <- auto_tuner(
-  tuner = tnr("random_search"),
-  learner = learner_rf_tuned_no_gender,
-  resampling = rsmp("cv", folds = 5),
-  measure = msr("regr.rmse"),
-  terminator = trm("evals", n_evals = 25)
-)
-```
-
-```{r}
-at_rf_no_gender$train(task_no_gender, row_ids = train_set)
-```
-
-```{r}
-at_rf_no_gender$tuning_result
-```
-
-```{r}
-pred_tuned_no_gender <- at_rf_no_gender$predict(task_no_gender, row_ids = test_set)
-
-pred_tuned_no_gender$score(list(
-  msr("regr.rmse"),
-  msr("regr.mae"),
-  msr("regr.rsq")
-))
-```
-
-Shapley, PDP, ALE 
-```{r}
-gns_kunde_no_gender <- gns_kunde[,-6] # Remove gender from gns_kunde
-
-df_no_gender <- 
-  data.frame(
-    x = task_no_gender$feature_names,
-    y = shapley_values(at_rf_no_gender,
-                       task_no_gender,
-                       as.data.frame(gns_kunde_no_gender[, task_no_gender$feature_names]),
-                       1000)
-  )
-
-ggplot(df_no_gender, aes(x=y,y=x)) +
-  geom_col() +
-  labs(x="Shapley Value", y = "Feature", 
-       title = "Gns_kunde, no gender, Model: Random Forrest")
-
-explainer_no_gender <- explainer_fun(at_rf_no_gender, task_no_gender)
-
-pdps_no_gender <- model_profile(explainer_no_gender, type="partial")
-ales_no_gender <- model_profile(explainer_no_gender, type="accumulated")
-
-plot(pdps_no_gender)
-plot(ales_no_gender)
-```
-```{r}
-eks_kunde_no_gender <- eks_kunde[,-6] # Remove gender from gns_kunde
-
-df_no_gender <- 
-  data.frame(
-    x = task_no_gender$feature_names,
-    y = shapley_values(at_rf_no_gender,
-                       task_no_gender,
-                       as.data.frame(eks_kunde_no_gender[, task_no_gender$feature_names]),
-                       1000)
-  )
-
-ggplot(df_no_gender, aes(x=y,y=x)) +
-  geom_col() +
-  labs(x="Shapley Value", y = "Feature", 
-       title = "Eks_kunde, no gender, Model: Random Forrest")
+results_fair
 ```
 
