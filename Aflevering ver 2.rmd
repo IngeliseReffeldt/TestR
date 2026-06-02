@@ -34,6 +34,8 @@ library(xgboost)
 library(iml)
 library(DALEX)
 library(DALEXtra)
+library(fastshap)
+library(shapviz)
 ```
 
 # Load data
