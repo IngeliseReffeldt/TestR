@@ -251,26 +251,23 @@ elasticnet_lrn$predict(task$clone()$filter(split$test))$score(msrs(c("regr.rmse"
 #### GAM 
 
 ```{r}
-categorical_selector = selector_type(c("factor", "ordered"))
-
-make_encoded_learner = function(learner) {
-  as_learner(
-    po("encode", method = "treatment") %>>%
-    learner
-  )
-}
+# Smoothing function on all numeric values
+formula_gam = ClaimAmount ~ s(Exposure) + s(RecordBeg) + s(RecordEnd) + 
+  VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + 
+  HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine + 
+  VehEnergy + VehMaxSpeed + VehClass + s(RiskVar) + Garage
 
 # Simple GAM model - no tuning 
-lrn_gam = make_encoded_learner(lrn("regr.gam"))
+lrn_gam = lrn("regr.gam", formula = formula_gam)
 lrn_gam$train(task, row_ids = split$train)
 lrn_gam$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae", "regr.rsq")))
 
 # Autotuning 
-lrn_gam_t = lrn_gam = make_encoded_learner(lrn("regr.gam",
-                                               formula=ClaimAmount ~ s(Exposure) + s(LicAge) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
-                                               gamma = to_tune(1,1e3,logscale=TRUE),
-                                               select = to_tune(c(TRUE, FALSE)),
-                                               drop.unused.levels=FALSE)) # Default is TRUE, but this may cause errors if splits are unlucky
+lrn_gam_t = lrn("regr.gam",
+                formula = formula_gam,
+                gamma = to_tune(1,1e3,logscale=TRUE),
+                select = to_tune(c(TRUE, FALSE)),
+                drop.unused.levels=FALSE) # Default is TRUE, but this may cause errors if splits are unlucky
 
 lrn_gam_tune = auto_tuner(
   tuner = tnr("random_search"),
