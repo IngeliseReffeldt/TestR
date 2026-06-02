@@ -267,6 +267,7 @@ lrn_gam$predict(task, row_ids = split$test)$score(msrs(c("regr.rmse", "regr.mae"
 
 # Autotuning 
 lrn_gam_t = lrn_gam = make_encoded_learner(lrn("regr.gam",
+                                               formula=ClaimAmount ~ s(Exposure) + s(LicAge) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
                                                gamma = to_tune(1,1e3,logscale=TRUE),
                                                select = to_tune(c(TRUE, FALSE)),
                                                drop.unused.levels=FALSE)) # Default is TRUE, but this may cause errors if splits are unlucky
@@ -939,7 +940,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=ClaimAmount ~ Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=ClaimAmount ~ s(Exposure) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
@@ -952,7 +953,7 @@ lrn_LicAge_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=LicAge ~ Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=LicAge ~ s(Exposure) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
@@ -988,7 +989,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=ClaimAmount ~ LicAge + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=ClaimAmount ~ s(LicAge) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
@@ -1029,7 +1030,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=ClaimAmount ~ s(LicAge) + s(Exposure) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
@@ -1042,7 +1043,7 @@ lrn_DrivAge_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=DrivAge ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=DrivAge ~ s(LicAge) + s(Exposure) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + HasKmLimit + s(BonusMalus) + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
@@ -1070,7 +1071,7 @@ lrn_amount_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=ClaimAmount ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=ClaimAmount ~ s(LicAge) + s(Exposure) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
@@ -1083,7 +1084,7 @@ lrn_BonusMalus_on_allother_smooth = auto_tuner(
   tnr("random_search"),
   lrn(
     "regr.gam",
-    formula=BonusMalus ~ LicAge + Exposure + RecordBeg + RecordEnd + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
+    formula=BonusMalus ~ s(LicAge) + s(Exposure) + s(RecordBeg) + s(RecordEnd) + VehAge + Gender + MariStat + SocioCateg + VehUsage + s(DrivAge) + HasKmLimit + VehBody + VehPrice + VehEngine+VehEnergy+VehMaxSpeed + VehClass + s(RiskVar) + Garage,
     gamma = to_tune(1,1e3,logscale=TRUE),
     select = to_tune(c(TRUE, FALSE)),
     drop.unused.levels=FALSE # Default is TRUE, but this may cause errors if splits are unlucky
