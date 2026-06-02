@@ -154,6 +154,7 @@ eks_kunde$MariStat <- factor("Alone")
 eks_kunde$SocioCateg <- factor("CSP50")
 eks_kunde$VehUsage <- factor("Private+trip to office")
 eks_kunde$DrivAge <- as.numeric(30)
+eks_kunde$HasKmLimit <- factor(names(sort(table(MPL_data_lump$HasKmLimit), decreasing = TRUE))[1])
 eks_kunde$BonusMalus <- as.numeric(120)
 eks_kunde$VehBody <- factor("sport utility vehicle")
 eks_kunde$VehPrice <- factor("V")
@@ -923,7 +924,7 @@ results_nn
 We start by making a matrix for the results we want 
 ```{r}
 results <- matrix(0, nrow=4, ncol=3)
-rownames(results) = c("LicAge", "Exposure","DrivAge","BonusMalus","VehPrice")
+rownames(results) = c("LicAge", "Exposure","DrivAge","BonusMalus")
 colnames(results) = c("regr.rmse", "regr.mae", "regr.rsq")
 ```
 
@@ -1135,6 +1136,19 @@ ggplot(df_shapley_values, aes(x=y,y=x)) +
   geom_col() +
   labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: Random Forrest")
 ```
+Shapley values for eks_kunde
+Random forrest second model made with tuning
+```{r}
+df_shapley_values_eks <- 
+  data.frame(
+    x = task$feature_names,
+    y = shapley_values(at_rf_2,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
+  )
+
+ggplot(df_shapley_values_eks, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: Random Forrest")
+```
 
 Shapley values for gns_kunde
 LightGBM model made with tuning
@@ -1150,13 +1164,28 @@ ggplot(df_shapley_values_lgbm, aes(x=y,y=x)) +
   labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: LightGBM")
 ```
 
+Shapley values for eks_kunde
+LightGBM model made with tuning
+```{r}
+df_shapley_values_lgbm_eks <- 
+  data.frame(
+    x = task$feature_names,
+    y = shapley_values(at_lgb_2,task,as.data.frame(eks_kunde[, task$feature_names]),1000)
+  )
+
+ggplot(df_shapley_values_lgbm_eks, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: LightGBM")
+```
+
+
 Shapley values for gns_kunde
 NN model made with tuning
 ```{r}
 df_shapley_values_NN <- 
   data.frame(
     x = task$feature_names,
-    y = shapley_values(learner_nn,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
+    y = shapley_values(learner_nn,task,as.data.frame(gns_kunde[, ]),1000)
   )
 
 ggplot(df_shapley_values_NN, aes(x=y,y=x)) +
@@ -1299,5 +1328,22 @@ ales_no_gender <- model_profile(explainer_no_gender, type="accumulated")
 
 plot(pdps_no_gender)
 plot(ales_no_gender)
+```
+```{r}
+eks_kunde_no_gender <- eks_kunde[,-6] # Remove gender from gns_kunde
+
+df_no_gender <- 
+  data.frame(
+    x = task_no_gender$feature_names,
+    y = shapley_values(at_rf_no_gender,
+                       task_no_gender,
+                       as.data.frame(eks_kunde_no_gender[, task_no_gender$feature_names]),
+                       1000)
+  )
+
+ggplot(df_no_gender, aes(x=y,y=x)) +
+  geom_col() +
+  labs(x="Shapley Value", y = "Feature", 
+       title = "Eks_kunde, no gender, Model: Random Forrest")
 ```
 
