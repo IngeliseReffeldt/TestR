@@ -146,8 +146,8 @@ eks_kunde <- subset(MPL_data_lump[1,], select = -ClaimAmount)
 
 eks_kunde$Exposure <- 1  
 eks_kunde$LicAge <- as.numeric(60)
-eks_kunde$RecordBeg <- as.Date("2004-01-01")
-eks_kunde$RecordEnd <- as.Date("2005-01-01")
+eks_kunde$RecordBeg <- as.numeric(as.Date("2004-01-01"))
+eks_kunde$RecordEnd <- as.numeric(as.Date("2005-01-01"))
 eks_kunde$VehAge <- factor("0")
 eks_kunde$Gender <- factor("Male")
 eks_kunde$MariStat <- factor("Alone")
@@ -1142,12 +1142,12 @@ Random forrest second model made with tuning
 df_shapley_values_eks <- 
   data.frame(
     x = task$feature_names,
-    y = shapley_values(at_rf_2,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
+    y = shapley_values(at_rf_2,task,as.data.frame(eks_kunde[, task$feature_names]),1000)
   )
 
 ggplot(df_shapley_values_eks, aes(x=y,y=x)) +
   geom_col() +
-  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: Random Forrest")
+  labs(x="Shapley Value", y = "Feature", title = "Extreme customer, Model: Random Forrest")
 ```
 
 Shapley values for gns_kunde
@@ -1175,9 +1175,8 @@ df_shapley_values_lgbm_eks <-
 
 ggplot(df_shapley_values_lgbm_eks, aes(x=y,y=x)) +
   geom_col() +
-  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: LightGBM")
+  labs(x="Shapley Value", y = "Feature", title = "Extreme customer, Model: LightGBM")
 ```
-
 
 Shapley values for gns_kunde
 NN model made with tuning
@@ -1185,7 +1184,7 @@ NN model made with tuning
 df_shapley_values_NN <- 
   data.frame(
     x = task$feature_names,
-    y = shapley_values(learner_nn,task,as.data.frame(gns_kunde[, ]),1000)
+    y = shapley_values(learner_nn,task,as.data.frame(gns_kunde[, task$feature_names]),1000)
   )
 
 ggplot(df_shapley_values_NN, aes(x=y,y=x)) +
