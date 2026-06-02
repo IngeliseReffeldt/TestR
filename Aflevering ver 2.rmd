@@ -1250,6 +1250,39 @@ plot(ale_categ) +
   )
 ```
 
+## Beeswarm plot 
+SHAP values
+```{r}
+predict_fun <- function(model,task){ 
+  Predictor$new(
+    model = model,
+    data = task$data(cols = task$feature_names),
+    y = task$data(cols = task$target_names)[[1]]
+  )
+}
+
+predictor_rf <- predict_fun(model = at_rf_2, task = task)
+
+shap_values <- fastshap::explain(
+  predictor_rf$model,
+  X = task$data(rows = split$test), # All rows; maybe it is to much? For fewer rows: task$data(rows = split$test)[1:10,]
+  pred_wrapper = function(object, newdata) {
+    predict(object, newdata = newdata)
+  },
+  nsim = 10
+)
+```
+Shapviz object
+```{r}
+sv <- shapviz::shapviz(shap_values, X = task$data(rows = split$test)[1:10,])
+```
+Beeswarm plot
+```{r}
+shapviz::sv_importance(sv, kind = "beeswarm")
+```
+
+
+
 ## Sensitive or protected features - Gender
 ```{r}
 test_data <- MPL_data_lump[test_set, ]
