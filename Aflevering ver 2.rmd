@@ -1201,7 +1201,7 @@ df_shapley_values_NN_eks <-
     y = shapley_values(learner_nn,task,as.data.frame(eks_kunde[, task$feature_names]),1000)
   )
 
-ggplot(df_shapley_values_NN, aes(x=y,y=x)) +
+ggplot(df_shapley_values_NN_eks, aes(x=y,y=x)) +
   geom_col() +
   labs(x="Shapley Value", y = "Feature", title = "Extreme customer, Model: NN")
 ```
