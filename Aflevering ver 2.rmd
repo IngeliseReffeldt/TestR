@@ -1267,7 +1267,7 @@ predictor_rf <- predict_fun(model = at_rf_2, task = task)
 
 shap_values <- fastshap::explain(
   predictor_rf$model,
-  X = task$data(rows = split$test), # All rows; maybe it is to much? For fewer rows: task$data(rows = split$test)[1:10,]
+  X = as.data.frame(task$data(rows = split$test)), # All rows; maybe it is to much? For fewer rows: task$data(rows = split$test)[1:10,]
   pred_wrapper = function(object, newdata) {
     predict(object, newdata = newdata)
   },
@@ -1276,7 +1276,7 @@ shap_values <- fastshap::explain(
 ```
 Shapviz object
 ```{r}
-sv <- shapviz::shapviz(shap_values, X = task$data(rows = split$test)[1:10,])
+sv <- shapviz::shapviz(shap_values, X = as.data.frame(task$data(rows = split$test)), baseline = mean(MPL_data_lump$ClaimAmount))
 ```
 Beeswarm plot
 ```{r}
