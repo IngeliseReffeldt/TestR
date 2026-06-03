@@ -1189,9 +1189,8 @@ df_shapley_values_NN <-
 
 ggplot(df_shapley_values_NN, aes(x=y,y=x)) +
   geom_col() +
-  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model: NN")
+  labs(x="Shapley Value", y = "Feature", title = "Average customer, Model NN")
 ```
-
 Shapley values for eks_kunde
 NN model made with tuning
 ```{r}
@@ -1203,9 +1202,8 @@ df_shapley_values_NN_eks <-
 
 ggplot(df_shapley_values_NN_eks, aes(x=y,y=x)) +
   geom_col() +
-  labs(x="Shapley Value", y = "Feature", title = "Extreme customer, Model: NN")
+  labs(x="Shapley Value", y = "Feature", title = "Extreme customer, Model NN")
 ```
-
 ## PDP and ALE
 
 ```{r}
