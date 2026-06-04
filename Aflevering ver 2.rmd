@@ -1102,6 +1102,21 @@ mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_BonusMalus_smooth,MPL_dat
 summary(lm_amount_on_BonusMalus_smooth)$r.squared)
 ```
 
+## Predictions for the three chosen models:
+```{r}
+# 1) Second tuned random forrest ; at_rf_2
+at_rf_2$predict_newdata(gns_kunde)
+at_rf_2$predict_newdata(eks_kunde)
+
+# 2) Second tuned LightGBM ; at_lgb_2
+at_lgb_2$predict_newdata(gns_kunde)
+at_lgb_2$predict_newdata(eks_kunde)
+
+# 3) Neural network ; learner_nn 
+learner_nn$predict_newdata(gns_kunde)
+learner_nn$predict_newdata(eks_kunde)
+```
+
 ## Shapley values 
 
 ```{r}
