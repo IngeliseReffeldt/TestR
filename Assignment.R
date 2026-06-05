@@ -140,7 +140,6 @@ eks_kunde$Garage <- factor("Collective garage")
 #### TASK and SPLIT ####
 
 # Task
-```{r}
 task = as_task_regr(MPL_data_lump, target = "ClaimAmount")
 
 #Split
