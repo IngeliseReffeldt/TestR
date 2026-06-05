@@ -918,7 +918,7 @@ results_nn <- data.frame(
 results_nn
 ```
 
-###### Partial Linear Regression ######
+#### Partial Linear Regression ######
 
 We start by making a matrix for the results we want 
 ```{r}
@@ -929,7 +929,7 @@ colnames(results) = c("regr.rmse", "regr.mae", "regr.rsq")
 
 Now we make a model for each of our five chosen coefficient, where we focus on one off the coefficients and put all of the other together.
 
-##LicAge
+######LicAge
 ```{r}
 task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
 task_LicAge_on_allother = as_task_regr(MPL_data_lump[split$train,], target="LicAge")$select(setdiff(names(MPL_data_lump), c("LicAge", "ClaimAmount")))
@@ -978,7 +978,7 @@ results[1,] <- c(sqrt(mean(lm_amount_on_LicAge_smooth$residuals^2)),
 mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_LicAge_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_LicAge_smooth)$r.squared)
 ```
-##Exposure 
+######Exposure 
 ```{r}
 task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
 task_Exposure_on_allother = as_task_regr(MPL_data_lump[split$train,], target="Exposure")$select(setdiff(names(MPL_data_lump), c("Exposure", "ClaimAmount")))
@@ -1019,7 +1019,7 @@ results[2,] <- c(sqrt(mean(lm_amount_on_Exposure_smooth$residuals^2)),
 mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_Exposure_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_Exposure_smooth)$r.squared)
 ```
-##DrivAge
+######DrivAge
 ```{r}
 task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
 task_DrivAge_on_allother = as_task_regr(MPL_data_lump[split$train,], target="DrivAge")$select(setdiff(names(MPL_data_lump), c("DrivAge", "ClaimAmount")))
@@ -1060,7 +1060,7 @@ results[3,] <- c(sqrt(mean(lm_amount_on_DrivAge_smooth$residuals^2)),
 mae(MPL_data_lump$ClaimAmount, predict.lm(lm_amount_on_DrivAge_smooth,MPL_data_lump[split$train,])),
 summary(lm_amount_on_DrivAge_smooth)$r.squared)
 ```
-##BonusMalus
+######BonusMalus
 ```{r}
 task_amount_on_allother = as_task_regr(MPL_data_lump[split$train,], target="ClaimAmount")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
 task_BonusMalus_on_allother = as_task_regr(MPL_data_lump[split$train,], target="BonusMalus")$select(setdiff(names(MPL_data_lump), c("BonusMalus", "ClaimAmount")))
@@ -1292,7 +1292,7 @@ predictor_rf <- predict_fun(model = at_rf_2, task = task)
 
 shap_values <- fastshap::explain(
   predictor_rf$model,
-  X = as.data.frame(task$data(rows = split$test)), # All rows; maybe it is to much? For fewer rows: task$data(rows = split$test)[1:10,]
+  X = as.data.frame(task$data(rows = split$test)), 
   pred_wrapper = function(object, newdata) {
     predict(object, newdata = newdata)
   },
